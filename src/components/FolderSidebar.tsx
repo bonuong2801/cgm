@@ -260,7 +260,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
         <div className="flex items-center justify-between">
           <span className="text-xs text-zinc-400">Kích thước lưới ảnh</span>
           <div className="flex items-center gap-1 bg-zinc-900 p-0.5 rounded-md border border-zinc-800">
-            {[3, 4, 5, 6].map((cols) => (
+            {[2, 3, 4, 5, 6].map((cols) => (
               <button
                 key={cols}
                 type="button"
@@ -270,7 +270,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
                     ? 'bg-indigo-600 text-white font-semibold'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
-                title={`Hiển thị ${cols} cột`}
+                title={`Hiển thị ${cols} cột (${cols === 2 ? 'Ảnh cực lớn' : cols === 6 ? 'Thu nhỏ' : 'Tiêu chuẩn'})`}
               >
                 {cols}
               </button>
@@ -281,6 +281,10 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
         <div className="text-[11px] text-zinc-400 space-y-1 pt-1 border-t border-zinc-800/80">
           <div className="font-semibold text-zinc-300 mb-1">
             Phím tắt thao tác nhanh
+          </div>
+          <div className="flex justify-between">
+            <span>Phóng to soi chi tiết (500%)</span>
+            <span className="font-mono text-emerald-400">Space / Nhấp đúp</span>
           </div>
           <div className="flex justify-between">
             <span>Chuyển file trước / sau</span>

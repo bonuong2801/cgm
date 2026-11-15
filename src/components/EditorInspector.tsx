@@ -225,6 +225,16 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
 
       {/* Scrollable Inspector Controls */}
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {/* Quick Zoom & Detail Inspection Trigger */}
+        <button
+          type="button"
+          onClick={() => onOpenLightbox(selectedItem)}
+          className="w-full py-2 px-3 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-xs font-semibold text-indigo-200 flex items-center justify-between cursor-pointer transition-colors"
+        >
+          <span>Phóng to soi chi tiết ảnh (tới 500%)</span>
+          <span className="font-mono text-[11px] text-indigo-300">Phím Space</span>
+        </button>
+
         {/* 1. Cropping & Quick Rotation */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">

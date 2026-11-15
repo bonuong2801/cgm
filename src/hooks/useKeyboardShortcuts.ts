@@ -6,6 +6,7 @@ interface KeyboardShortcutHandlers {
   onRejectCurrent: () => void;
   onUndoLastReject: () => void;
   onOpenCropModal: () => void;
+  onToggleLightbox: () => void;
   onCloseModal: () => void;
   isAnyModalOpen: boolean;
 }
@@ -13,6 +14,7 @@ interface KeyboardShortcutHandlers {
 /**
  * Keyboard Shortcuts for high-speed photo culling & editing:
  * - ArrowLeft / ArrowRight: Navigate to previous / next media item
+ * - Space: Toggle full-screen zoomable Loupe / Lightbox view
  * - X or Delete: Reject current item (and automatically advance to next item)
  * - Z (or Ctrl+Z / Cmd+Z): Undo last rejection
  * - C: Open Crop modal for the currently selected photo
@@ -40,6 +42,12 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
           e.preventDefault();
           handlers.onCloseModal();
         }
+        return;
+      }
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        handlers.onToggleLightbox();
         return;
       }
 

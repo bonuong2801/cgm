@@ -62,18 +62,18 @@ export function buildOptimizedThumbnailUrls(
     if (hasSizeSuffix) {
       return {
         gridThumbUrl: thumbnailLink.replace(/=s\d+.*$/, '=s400'),
-        previewUrl: thumbnailLink.replace(/=s\d+.*$/, '=s1600'),
+        previewUrl: thumbnailLink.replace(/=s\d+.*$/, '=s2400'),
       };
     }
     return {
       gridThumbUrl: `${thumbnailLink}=s400`,
-      previewUrl: `${thumbnailLink}=s1600`,
+      previewUrl: `${thumbnailLink}=s2400`,
     };
   }
 
   return {
     gridThumbUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`,
-    previewUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`,
+    previewUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w2400`,
   };
 }
 

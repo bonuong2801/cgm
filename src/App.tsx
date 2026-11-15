@@ -328,6 +328,14 @@ export default function App() {
         setCropModalItemId(target.id);
       }
     },
+    onToggleLightbox: () => {
+      if (cropModalItemId || isExportModalOpen) return;
+      if (lightboxItemId) {
+        setLightboxItemId(null);
+      } else if (selectedItemId) {
+        setLightboxItemId(selectedItemId);
+      }
+    },
     onCloseModal: () => {
       if (cropModalItemId) {
         setCropModalItemId(null);

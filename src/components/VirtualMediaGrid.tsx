@@ -180,6 +180,8 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
 
   const estimatedRowHeight = useMemo(() => {
     switch (gridColumns) {
+      case 2:
+        return 420;
       case 3:
         return 300;
       case 4:
