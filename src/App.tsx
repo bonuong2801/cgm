@@ -3,9 +3,11 @@ import { AlertCircle, X } from 'lucide-react';
 import {
   CropArea,
   CullingStatus,
+  DEFAULT_LOGO_CONFIG,
   DriveFolder,
   DriveMediaItem,
   EditConfig,
+  LogoConfig,
   MediaTypeFilter,
 } from './types/media';
 import { crawlGoogleDriveFolder } from './services/driveApi';
@@ -13,7 +15,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { TopBar } from './components/TopBar';
 import { FolderSidebar } from './components/FolderSidebar';
 import { VirtualMediaGrid } from './components/VirtualMediaGrid';
-import { EditorInspector } from './components/EditorInspector';
+import { EditorInspector, LogoApplyScope } from './components/EditorInspector';
 import { LightboxModal } from './components/LightboxModal';
 import { CropModal } from './components/CropModal';
 import { ExportModal } from './components/ExportModal';
@@ -32,8 +34,15 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<CullingStatus>('kept');
   const [gridColumns, setGridColumns] = useState<number>(4);
 
-  // Selection & Modals
+  // Selection & Multi-Check State for Batch Logo
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(new Set());
+  const [logoScope, setLogoScope] = useState<LogoApplyScope>('checked-or-all');
+  const [globalLogo, setGlobalLogo] = useState<LogoConfig>({
+    ...DEFAULT_LOGO_CONFIG,
+  });
+
+  // Modals
   const [lightboxItemId, setLightboxItemId] = useState<string | null>(null);
   const [cropModalItemId, setCropModalItemId] = useState<string | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
@@ -113,6 +122,7 @@ export default function App() {
       setSelectedFolderId('ALL');
       setStatusFilter('kept');
       setRejectedHistoryIds([]);
+      setCheckedItemIds(new Set());
       setSelectedItemId(result.items[0]?.id || null);
     } catch (err: any) {
       setErrorMessage(
@@ -124,6 +134,39 @@ export default function App() {
       setLoadingStatusText('');
     }
   };
+
+  // Multi-select checkbox toggle
+  const handleToggleCheckItem = useCallback(
+    (itemId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setCheckedItemIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(itemId)) {
+          next.delete(itemId);
+        } else {
+          next.add(itemId);
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleSelectAllVisiblePhotos = useCallback(() => {
+    setCheckedItemIds((prev) => {
+      const next = new Set(prev);
+      for (const item of filteredItems) {
+        if (item.mediaType === 'image') {
+          next.add(item.id);
+        }
+      }
+      return next;
+    });
+  }, [filteredItems]);
+
+  const handleClearCheckedItems = useCallback(() => {
+    setCheckedItemIds(new Set());
+  }, []);
 
   // Soft-Delete Culling: Toggle Kept / Rejected
   const handleToggleRejectStatus = useCallback(
@@ -213,6 +256,79 @@ export default function App() {
       );
     },
     []
+  );
+
+  /**
+   * Automatic Batch Logo Update:
+   * - If scope === 'single': applies only to selectedItemId
+   * - If scope === 'current-folder': applies to all kept photos in active folder
+   * - If scope === 'checked-or-all':
+   *     - If user has checked specific photos (checkedItemIds.size > 0), applies to all checked photos
+   *     - Otherwise applies to ALL kept photos across all folders!
+   */
+  const handleBatchUpdateLogo = useCallback(
+    (
+      updater: (prev: LogoConfig) => LogoConfig,
+      scopeOverride?: LogoApplyScope
+    ): number => {
+      const effectiveScope = scopeOverride || logoScope;
+      const baseLogo =
+        selectedItem && selectedItem.mediaType === 'image'
+          ? selectedItem.edit.logo
+          : globalLogo;
+      const nextLogo = updater(baseLogo);
+      setGlobalLogo(nextLogo);
+
+      const targetFolderId =
+        selectedFolderId !== 'ALL'
+          ? selectedFolderId
+          : selectedItem?.folderId || '';
+
+      let affectedCount = 0;
+
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.mediaType !== 'image') return item;
+
+          let shouldApply = false;
+          if (effectiveScope === 'single') {
+            shouldApply = item.id === selectedItemId;
+          } else if (effectiveScope === 'current-folder') {
+            shouldApply =
+              item.status === 'kept' && item.folderId === targetFolderId;
+          } else {
+            // 'checked-or-all'
+            if (checkedItemIds.size > 0) {
+              shouldApply = checkedItemIds.has(item.id);
+            } else {
+              shouldApply = item.status === 'kept';
+            }
+          }
+
+          if (shouldApply) {
+            affectedCount += 1;
+            return {
+              ...item,
+              edit: {
+                ...item.edit,
+                logo: { ...nextLogo },
+              },
+            };
+          }
+          return item;
+        })
+      );
+
+      return affectedCount;
+    },
+    [
+      logoScope,
+      selectedItem,
+      globalLogo,
+      selectedFolderId,
+      selectedItemId,
+      checkedItemIds,
+    ]
   );
 
   // Apply Crop from CropModal
@@ -355,6 +471,27 @@ export default function App() {
     [items]
   );
 
+  const keptPhotoCount = useMemo(
+    () =>
+      items.filter((i) => i.status === 'kept' && i.mediaType === 'image')
+        .length,
+    [items]
+  );
+
+  const currentFolderPhotoCount = useMemo(() => {
+    const targetFolderId =
+      selectedFolderId !== 'ALL'
+        ? selectedFolderId
+        : selectedItem?.folderId || '';
+    if (!targetFolderId) return keptPhotoCount;
+    return items.filter(
+      (i) =>
+        i.status === 'kept' &&
+        i.mediaType === 'image' &&
+        i.folderId === targetFolderId
+    ).length;
+  }, [items, selectedFolderId, selectedItem, keptPhotoCount]);
+
   const currentLightboxIndex = useMemo(() => {
     if (!lightboxItemId) return 0;
     const idx = filteredItems.findIndex((i) => i.id === lightboxItemId);
@@ -420,7 +557,11 @@ export default function App() {
         <VirtualMediaGrid
           items={filteredItems}
           selectedItemId={selectedItemId}
+          checkedItemIds={checkedItemIds}
           onSelectItem={(item) => setSelectedItemId(item.id)}
+          onToggleCheckItem={handleToggleCheckItem}
+          onSelectAllVisiblePhotos={handleSelectAllVisiblePhotos}
+          onClearCheckedItems={handleClearCheckedItems}
           onOpenLightbox={(item) => {
             setSelectedItemId(item.id);
             setLightboxItemId(item.id);
@@ -431,9 +572,16 @@ export default function App() {
           hasAnyLoadedItems={items.length > 0}
         />
 
-        {/* Right Pane: Photo Editor, Smart Logo Watermarking & 3-Tier Sync */}
+        {/* Right Pane: Photo Editor, Smart Batch Logo Watermarking & 3-Tier Sync */}
         <EditorInspector
           selectedItem={selectedItem}
+          checkedCount={checkedItemIds.size}
+          keptPhotoCount={keptPhotoCount}
+          currentFolderPhotoCount={currentFolderPhotoCount}
+          globalLogo={globalLogo}
+          logoScope={logoScope}
+          onChangeLogoScope={setLogoScope}
+          onBatchUpdateLogo={handleBatchUpdateLogo}
           onUpdateEdit={handleUpdateEdit}
           onOpenCropModal={(item) => setCropModalItemId(item.id)}
           onOpenLightbox={(item) => setLightboxItemId(item.id)}

@@ -1,11 +1,13 @@
 import React, { useRef, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  CheckSquare,
   Crop,
   Maximize2,
   Play,
   RotateCcw,
   Sliders,
+  Square,
   Stamp,
   Trash2,
 } from 'lucide-react';
@@ -19,7 +21,11 @@ import { buildCssFilterString } from '../services/imageProcessor';
 interface VirtualMediaGridProps {
   items: DriveMediaItem[];
   selectedItemId: string | null;
+  checkedItemIds: Set<string>;
   onSelectItem: (item: DriveMediaItem) => void;
+  onToggleCheckItem: (itemId: string, e: React.MouseEvent) => void;
+  onSelectAllVisiblePhotos: () => void;
+  onClearCheckedItems: () => void;
   onOpenLightbox: (item: DriveMediaItem) => void;
   onToggleRejectStatus: (item: DriveMediaItem, e?: React.MouseEvent) => void;
   gridColumns: number;
@@ -91,9 +97,6 @@ export const LiveEditedPhotoPreview: React.FC<{
   const isPortraitFrame = finalH > finalW;
 
   // Proportional sizing: logo width is scalePercent% of the SHORTER edge
-  // In CSS, width % is relative to container width (finalW).
-  // If landscape (finalW >= finalH), shortSide = finalH, so width% of container = scalePercent * (finalH / finalW).
-  // If portrait (finalH > finalW), shortSide = finalW, so width% of container = scalePercent.
   const logoCssWidthPercent = isPortraitFrame
     ? edit.logo.scalePercent
     : edit.logo.scalePercent * (finalH / Math.max(1, finalW));
@@ -160,7 +163,11 @@ export const LiveEditedPhotoPreview: React.FC<{
 export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   items,
   selectedItemId,
+  checkedItemIds,
   onSelectItem,
+  onToggleCheckItem,
+  onSelectAllVisiblePhotos,
+  onClearCheckedItems,
   onOpenLightbox,
   onToggleRejectStatus,
   gridColumns,
@@ -168,6 +175,11 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   hasAnyLoadedItems,
 }) => {
   const parentRef = useRef<HTMLDivElement | null>(null);
+
+  const visiblePhotoCount = useMemo(
+    () => items.filter((i) => i.mediaType === 'image').length,
+    [items]
+  );
 
   // Group flat items into rows of `gridColumns` for @tanstack/react-virtual
   const rows = useMemo(() => {
@@ -249,195 +261,261 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   }
 
   return (
-    <main
-      ref={parentRef}
-      className="flex-1 bg-zinc-950 overflow-y-auto p-4 select-none"
-    >
-      <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const rowItems = rows[virtualRow.index] || [];
+    <div className="flex-1 bg-zinc-950 flex flex-col min-w-0 overflow-hidden select-none">
+      {/* Sub-header Multi-Select Bar for Batch Logo / Actions */}
+      <div className="h-10 px-4 bg-zinc-900/60 border-b border-zinc-800/80 flex items-center justify-between gap-4 shrink-0 text-xs">
+        <div className="flex items-center gap-3">
+          <span className="text-zinc-400">
+            Hiển thị <strong className="text-zinc-200 font-mono">{items.length}</strong> file
+          </span>
+          {checkedItemIds.size > 0 && (
+            <>
+              <span className="text-zinc-700" aria-hidden="true">·</span>
+              <span className="text-emerald-400 font-medium">
+                Đã tích chọn {checkedItemIds.size} ảnh để gắn Logo / xử lý riêng
+              </span>
+            </>
+          )}
+        </div>
 
-          return (
-            <div
-              key={virtualRow.key}
-              data-index={virtualRow.index}
-              ref={rowVirtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-              className="pb-3.5"
+        {visiblePhotoCount > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onSelectAllVisiblePhotos}
+              className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
             >
-              <div
-                className="grid gap-3.5"
-                style={{
-                  gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
-                }}
+              <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Chọn tất cả ảnh đang xem ({visiblePhotoCount})</span>
+            </button>
+            {checkedItemIds.size > 0 && (
+              <button
+                type="button"
+                onClick={onClearCheckedItems}
+                className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors"
               >
-                {rowItems.map((item) => {
-                  const isSelected = selectedItemId === item.id;
-                  const editFlags =
-                    item.mediaType === 'image'
-                      ? isPhotoEdited(item.edit)
-                      : {
-                          isCropped: false,
-                          isColorEdited: false,
-                          isWatermarked: false,
-                          hasAnyEdit: false,
-                        };
-
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() => onSelectItem(item)}
-                      onDoubleClick={() => onOpenLightbox(item)}
-                      className={`group relative rounded-lg bg-zinc-900 border transition-colors overflow-hidden flex flex-col cursor-pointer ${
-                        isSelected
-                          ? 'border-indigo-500 ring-2 ring-indigo-500/40'
-                          : 'border-zinc-800 hover:border-zinc-700'
-                      }`}
-                    >
-                      {/* Thumbnail Viewport */}
-                      <div className="relative w-full aspect-4/3 bg-zinc-950 flex items-center justify-center overflow-hidden">
-                        {item.mediaType === 'video' ? (
-                          <>
-                            <img
-                              src={item.gridThumbUrl}
-                              alt={item.name}
-                              referrerPolicy="no-referrer"
-                              loading="lazy"
-                              className="w-full h-full object-cover select-none pointer-events-none"
-                            />
-                            {/* Centered Play Overlay */}
-                            <div className="absolute inset-0 bg-black/30 group-hover:bg-black/45 transition-colors flex items-center justify-center">
-                              <div className="w-11 h-11 rounded-full bg-zinc-900/85 border border-zinc-700 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
-                                <Play className="w-5 h-5 fill-white ml-0.5" />
-                              </div>
-                            </div>
-                            {/* Video Duration Text Overlay */}
-                            <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[11px] font-mono tabular-nums text-zinc-100">
-                              {formatVideoDuration(item.durationMillis)}
-                            </div>
-                          </>
-                        ) : (
-                          <LiveEditedPhotoPreview
-                            item={item}
-                            useHighRes={false}
-                            className="w-full h-full"
-                          />
-                        )}
-
-                        {/* Hover Top-Right Quick Actions: Open Lightbox + Reject/Restore */}
-                        <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenLightbox(item);
-                            }}
-                            className="p-1.5 rounded-md bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 shadow-xs cursor-pointer"
-                            title="Phóng to xem chi tiết / phát video"
-                          >
-                            <Maximize2 className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => onToggleRejectStatus(item, e)}
-                            className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1 border shadow-xs cursor-pointer whitespace-nowrap shrink-0 ${
-                              item.status === 'kept'
-                                ? 'bg-rose-600/95 hover:bg-rose-500 text-white border-rose-500'
-                                : 'bg-emerald-600/95 hover:bg-emerald-500 text-white border-emerald-500'
-                            }`}
-                            title={
-                              item.status === 'kept'
-                                ? 'Loại bỏ khỏi danh sách xuất (Phím X)'
-                                : 'Khôi phục lại vào danh sách giữ'
-                            }
-                          >
-                            {item.status === 'kept' ? (
-                              <>
-                                <Trash2 className="w-3 h-3" />
-                                <span>Loại bỏ</span>
-                              </>
-                            ) : (
-                              <>
-                                <RotateCcw className="w-3 h-3" />
-                                <span>Khôi phục</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        {/* Subtle Edit Indicators at Bottom Left */}
-                        {editFlags.hasAnyEdit && (
-                          <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/80 text-[11px] text-zinc-200 flex items-center gap-2 z-10">
-                            {editFlags.isCropped && (
-                              <span
-                                className="flex items-center gap-1 text-amber-300"
-                                title="Đã cắt khung hình hoặc xoay ảnh"
-                              >
-                                <Crop className="w-3 h-3" />
-                                <span>Đã cắt</span>
-                              </span>
-                            )}
-                            {editFlags.isColorEdited && (
-                              <span
-                                className="flex items-center gap-1 text-indigo-300"
-                                title="Đã chỉnh ánh sáng / màu sắc"
-                              >
-                                <Sliders className="w-3 h-3" />
-                                <span>Màu</span>
-                              </span>
-                            )}
-                            {editFlags.isWatermarked && (
-                              <span
-                                className="flex items-center gap-1 text-emerald-300"
-                                title="Đã đóng dấu Logo"
-                              >
-                                <Stamp className="w-3 h-3" />
-                                <span>Logo</span>
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Card Footer: Unboxed Clean Metadata */}
-                      <div className="px-3 py-2 bg-zinc-900 border-t border-zinc-800/80 flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div
-                            className="text-xs font-medium text-zinc-200 truncate"
-                            title={item.name}
-                          >
-                            {item.name}
-                          </div>
-                          <div className="text-[11px] text-zinc-500 truncate flex items-center gap-1.5">
-                            <span className="truncate">{item.folderName}</span>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-mono tabular-nums shrink-0">
-                              {item.width}×{item.height}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+                Bỏ chọn ({checkedItemIds.size})
+              </button>
+            )}
+          </div>
+        )}
       </div>
-    </main>
+
+      {/* Virtualized Grid Viewport */}
+      <main ref={parentRef} className="flex-1 overflow-y-auto p-4">
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const rowItems = rows[virtualRow.index] || [];
+
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="pb-3.5"
+              >
+                <div
+                  className="grid gap-3.5"
+                  style={{
+                    gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {rowItems.map((item) => {
+                    const isSelected = selectedItemId === item.id;
+                    const isChecked = checkedItemIds.has(item.id);
+                    const editFlags =
+                      item.mediaType === 'image'
+                        ? isPhotoEdited(item.edit)
+                        : {
+                            isCropped: false,
+                            isColorEdited: false,
+                            isWatermarked: false,
+                            hasAnyEdit: false,
+                          };
+
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => onSelectItem(item)}
+                        onDoubleClick={() => onOpenLightbox(item)}
+                        className={`group relative rounded-lg bg-zinc-900 border transition-colors overflow-hidden flex flex-col cursor-pointer ${
+                          isSelected
+                            ? 'border-indigo-500 ring-2 ring-indigo-500/40'
+                            : isChecked
+                            ? 'border-emerald-500/80 ring-1 ring-emerald-500/30'
+                            : 'border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        {/* Thumbnail Viewport */}
+                        <div className="relative w-full aspect-4/3 bg-zinc-950 flex items-center justify-center overflow-hidden">
+                          {item.mediaType === 'video' ? (
+                            <>
+                              <img
+                                src={item.gridThumbUrl}
+                                alt={item.name}
+                                referrerPolicy="no-referrer"
+                                loading="lazy"
+                                className="w-full h-full object-cover select-none pointer-events-none"
+                              />
+                              {/* Centered Play Overlay */}
+                              <div className="absolute inset-0 bg-black/30 group-hover:bg-black/45 transition-colors flex items-center justify-center">
+                                <div className="w-11 h-11 rounded-full bg-zinc-900/85 border border-zinc-700 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+                                  <Play className="w-5 h-5 fill-white ml-0.5" />
+                                </div>
+                              </div>
+                              {/* Video Duration Text Overlay */}
+                              <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[11px] font-mono tabular-nums text-zinc-100">
+                                {formatVideoDuration(item.durationMillis)}
+                              </div>
+                            </>
+                          ) : (
+                            <LiveEditedPhotoPreview
+                              item={item}
+                              useHighRes={false}
+                              className="w-full h-full"
+                            />
+                          )}
+
+                          {/* Top-Left Multi-Select Checkbox for Photos */}
+                          {item.mediaType === 'image' && (
+                            <button
+                              type="button"
+                              onClick={(e) => onToggleCheckItem(item.id, e)}
+                              className={`absolute top-2 left-2 p-1 rounded-md border transition-opacity z-20 cursor-pointer ${
+                                isChecked
+                                  ? 'opacity-100 bg-emerald-600 border-emerald-500 text-white'
+                                  : 'opacity-0 group-hover:opacity-100 bg-zinc-900/85 border-zinc-700 text-zinc-300 hover:text-white'
+                              }`}
+                              title={
+                                isChecked
+                                  ? 'Bỏ chọn ảnh này'
+                                  : 'Đánh dấu chọn ảnh này để gắn Logo hàng loạt'
+                              }
+                            >
+                              {isChecked ? (
+                                <CheckSquare className="w-3.5 h-3.5" />
+                              ) : (
+                                <Square className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+
+                          {/* Hover Top-Right Quick Actions: Open Lightbox + Reject/Restore */}
+                          <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenLightbox(item);
+                              }}
+                              className="p-1.5 rounded-md bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 shadow-xs cursor-pointer"
+                              title="Phóng to soi chi tiết (Phím Space)"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => onToggleRejectStatus(item, e)}
+                              className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1 border shadow-xs cursor-pointer whitespace-nowrap shrink-0 ${
+                                item.status === 'kept'
+                                  ? 'bg-rose-600/95 hover:bg-rose-500 text-white border-rose-500'
+                                  : 'bg-emerald-600/95 hover:bg-emerald-500 text-white border-emerald-500'
+                              }`}
+                              title={
+                                item.status === 'kept'
+                                  ? 'Loại bỏ khỏi danh sách xuất (Phím X)'
+                                  : 'Khôi phục lại vào danh sách giữ'
+                              }
+                            >
+                              {item.status === 'kept' ? (
+                                <>
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Loại bỏ</span>
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Khôi phục</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Subtle Edit Indicators at Bottom Left */}
+                          {editFlags.hasAnyEdit && (
+                            <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/80 text-[11px] text-zinc-200 flex items-center gap-2 z-10">
+                              {editFlags.isCropped && (
+                                <span
+                                  className="flex items-center gap-1 text-amber-300"
+                                  title="Đã cắt khung hình hoặc xoay ảnh"
+                                >
+                                  <Crop className="w-3 h-3" />
+                                  <span>Đã cắt</span>
+                                </span>
+                              )}
+                              {editFlags.isColorEdited && (
+                                <span
+                                  className="flex items-center gap-1 text-indigo-300"
+                                  title="Đã chỉnh ánh sáng / màu sắc"
+                                >
+                                  <Sliders className="w-3 h-3" />
+                                  <span>Màu</span>
+                                </span>
+                              )}
+                              {editFlags.isWatermarked && (
+                                <span
+                                  className="flex items-center gap-1 text-emerald-300"
+                                  title="Đã đóng dấu Logo"
+                                >
+                                  <Stamp className="w-3 h-3" />
+                                  <span>Logo</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Card Footer: Unboxed Clean Metadata */}
+                        <div className="px-3 py-2 bg-zinc-900 border-t border-zinc-800/80 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div
+                              className="text-xs font-medium text-zinc-200 truncate"
+                              title={item.name}
+                            >
+                              {item.name}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 truncate flex items-center gap-1.5">
+                              <span className="truncate">{item.folderName}</span>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono tabular-nums shrink-0">
+                                {item.width}×{item.height}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </main>
+    </div>
   );
 };
