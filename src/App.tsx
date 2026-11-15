@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 import {
   CropArea,
@@ -9,7 +9,6 @@ import {
   MediaTypeFilter,
 } from './types/media';
 import { crawlGoogleDriveFolder } from './services/driveApi';
-import { generateVietnameseDemoDataset } from './services/mockData';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { TopBar } from './components/TopBar';
 import { FolderSidebar } from './components/FolderSidebar';
@@ -20,13 +19,11 @@ import { CropModal } from './components/CropModal';
 import { ExportModal } from './components/ExportModal';
 
 export default function App() {
-  // Load rich Vietnamese Demo Mode dataset on initial boot so the studio is immediately interactive
-  const initialDemo = useMemo(() => generateVietnameseDemoDataset(), []);
+  const driveInputRef = useRef<HTMLInputElement | null>(null);
 
   const [driveUrlInput, setDriveUrlInput] = useState<string>('');
-  const [folders, setFolders] = useState<DriveFolder[]>(initialDemo.folders);
-  const [items, setItems] = useState<DriveMediaItem[]>(initialDemo.items);
-  const [isDemoActive, setIsDemoActive] = useState<boolean>(true);
+  const [folders, setFolders] = useState<DriveFolder[]>([]);
+  const [items, setItems] = useState<DriveMediaItem[]>([]);
 
   // Filtering & View State
   const [selectedFolderId, setSelectedFolderId] = useState<string>('ALL');
@@ -36,9 +33,7 @@ export default function App() {
   const [gridColumns, setGridColumns] = useState<number>(4);
 
   // Selection & Modals
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(
-    initialDemo.items[0]?.id || null
-  );
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [lightboxItemId, setLightboxItemId] = useState<string | null>(null);
   const [cropModalItemId, setCropModalItemId] = useState<string | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
@@ -115,7 +110,6 @@ export default function App() {
       );
       setFolders(result.folders);
       setItems(result.items);
-      setIsDemoActive(false);
       setSelectedFolderId('ALL');
       setStatusFilter('kept');
       setRejectedHistoryIds([]);
@@ -130,20 +124,6 @@ export default function App() {
       setLoadingStatusText('');
     }
   };
-
-  // Load Vietnamese Demo Mode Dataset
-  const handleLoadDemoMode = useCallback(() => {
-    const demo = generateVietnameseDemoDataset();
-    setFolders(demo.folders);
-    setItems(demo.items);
-    setIsDemoActive(true);
-    setErrorMessage(null);
-    setSelectedFolderId('ALL');
-    setMediaTypeFilter('all');
-    setStatusFilter('kept');
-    setRejectedHistoryIds([]);
-    setSelectedItemId(demo.items[0]?.id || null);
-  }, []);
 
   // Soft-Delete Culling: Toggle Kept / Rejected
   const handleToggleRejectStatus = useCallback(
@@ -377,15 +357,14 @@ export default function App() {
     <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
       {/* Top Studio Bar */}
       <TopBar
+        inputRef={driveInputRef}
         driveUrlInput={driveUrlInput}
         onDriveUrlChange={setDriveUrlInput}
         onLoadDriveUrl={handleLoadDriveUrl}
-        onLoadDemoMode={handleLoadDemoMode}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         isLoading={isLoading}
         keptCount={totalKeptCount}
         totalCount={items.length}
-        isDemoActive={isDemoActive}
         canUndoReject={rejectedHistoryIds.length > 0}
         onUndoReject={handleUndoLastReject}
       />
@@ -440,7 +419,7 @@ export default function App() {
           }}
           onToggleRejectStatus={handleToggleRejectStatus}
           gridColumns={gridColumns}
-          onLoadDemoMode={handleLoadDemoMode}
+          onFocusDriveInput={() => driveInputRef.current?.focus()}
           hasAnyLoadedItems={items.length > 0}
         />
 

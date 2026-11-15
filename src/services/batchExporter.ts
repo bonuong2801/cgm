@@ -154,15 +154,6 @@ export function buildExportPlan(
 }
 
 /**
- * Generates a realistic small valid MP4 binary payload for Demo Mode videos
- * when exporting so users can test full video export without network errors
- */
-function createDemoVideoBlob(item: DriveMediaItem): Blob {
-  const headerInfo = `CGM DEMO VIDEO FILE - ${item.name} (${item.folderName})`;
-  return new Blob([headerInfo], { type: item.mimeType || 'video/mp4' });
-}
-
-/**
  * Zero-RAM Video Streaming into a FileSystemFileHandle writable stream
  */
 async function streamVideoToFileHandle(
@@ -173,13 +164,6 @@ async function streamVideoToFileHandle(
   const writable = await fileHandle.createWritable();
 
   try {
-    if (item.isDemo || item.downloadUrl.startsWith('data:')) {
-      const demoBlob = createDemoVideoBlob(item);
-      await writable.write(demoBlob);
-      await writable.close();
-      return;
-    }
-
     const response = await fetch(item.downloadUrl, { signal });
     if (!response.ok) {
       throw new Error(
@@ -209,9 +193,6 @@ async function fetchVideoBlobForZip(
   item: DriveMediaItem,
   signal: AbortSignal
 ): Promise<Blob> {
-  if (item.isDemo || item.downloadUrl.startsWith('data:')) {
-    return createDemoVideoBlob(item);
-  }
   const response = await fetch(item.downloadUrl, { signal });
   if (!response.ok) {
     throw new Error(

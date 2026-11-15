@@ -62,7 +62,6 @@ export interface DriveMediaItem {
   durationMillis?: number;
   status: CullingStatus;
   edit: EditConfig;
-  isDemo?: boolean;
 }
 
 export type MediaTypeFilter = 'all' | 'image' | 'video';

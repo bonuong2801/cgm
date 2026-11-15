@@ -6,7 +6,6 @@ import {
   Play,
   RotateCcw,
   Sliders,
-  Sparkles,
   Stamp,
   Trash2,
 } from 'lucide-react';
@@ -24,7 +23,7 @@ interface VirtualMediaGridProps {
   onOpenLightbox: (item: DriveMediaItem) => void;
   onToggleRejectStatus: (item: DriveMediaItem, e?: React.MouseEvent) => void;
   gridColumns: number;
-  onLoadDemoMode: () => void;
+  onFocusDriveInput: () => void;
   hasAnyLoadedItems: boolean;
 }
 
@@ -165,7 +164,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   onOpenLightbox,
   onToggleRejectStatus,
   gridColumns,
-  onLoadDemoMode,
+  onFocusDriveInput,
   hasAnyLoadedItems,
 }) => {
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -201,30 +200,29 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
     overscan: 4,
   });
 
-  // Empty State when no folder or demo is loaded yet
+  // Empty State when no Drive folder is loaded yet
   if (!hasAnyLoadedItems) {
     return (
       <main className="flex-1 bg-zinc-950 flex items-center justify-center p-8 select-none">
         <div className="max-w-lg w-full bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center space-y-5">
-          <div className="w-12 h-12 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center mx-auto text-indigo-400">
-            <Sparkles className="w-6 h-6" />
+          <div className="w-12 h-12 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center mx-auto text-indigo-400 font-bold text-sm">
+            CGM
           </div>
           <div className="space-y-2">
             <h1 className="text-lg font-bold text-zinc-100">
-              Bắt đầu làm việc với thư mục Google Drive
+              Nhập đường liên kết thư mục Google Drive
             </h1>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Dán đường liên kết thư mục Google Drive công khai vào thanh tìm kiếm phía trên để tự động quét song song 5–8 thư mục con, lọc ảnh nhanh 60fps, chỉnh màu, đóng dấu logo thông minh và xuất hàng loạt.
+              Dán đường liên kết thư mục Google Drive công khai (&ldquo;Bất kỳ ai có đường liên kết đều có thể xem&rdquo;) vào thanh tìm kiếm phía trên để tự động quét song song các thư mục con, lọc ảnh 60fps, chỉnh màu, đóng dấu logo và xuất hàng loạt.
             </p>
           </div>
-          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="pt-2 flex items-center justify-center">
             <button
               type="button"
-              onClick={onLoadDemoMode}
-              className="w-full sm:w-auto px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              onClick={onFocusDriveInput}
+              className="px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors cursor-pointer shadow-sm"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Dùng thử dữ liệu mẫu (5 Thư mục Sự kiện)</span>
+              Dán link thư mục Google Drive ngay
             </button>
           </div>
         </div>

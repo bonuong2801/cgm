@@ -3,7 +3,6 @@ import {
   Download,
   FolderSearch,
   Loader2,
-  Sparkles,
   RotateCcw,
 } from 'lucide-react';
 
@@ -11,28 +10,26 @@ interface TopBarProps {
   driveUrlInput: string;
   onDriveUrlChange: (val: string) => void;
   onLoadDriveUrl: (e?: React.FormEvent) => void;
-  onLoadDemoMode: () => void;
   onOpenExportModal: () => void;
   isLoading: boolean;
   keptCount: number;
   totalCount: number;
-  isDemoActive: boolean;
   canUndoReject: boolean;
   onUndoReject: () => void;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   driveUrlInput,
   onDriveUrlChange,
   onLoadDriveUrl,
-  onLoadDemoMode,
   onOpenExportModal,
   isLoading,
   keptCount,
   totalCount,
-  isDemoActive,
   canUndoReject,
   onUndoReject,
+  inputRef,
 }) => {
   const [inputFocused, setInputFocused] = useState(false);
 
@@ -48,7 +45,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </span>
       </div>
 
-      {/* Zone 2: Google Drive Folder Link Input Bar + Demo Trigger */}
+      {/* Zone 2: Google Drive Folder Link Input Bar */}
       <form
         onSubmit={onLoadDriveUrl}
         className="flex-1 max-w-2xl flex items-center gap-2"
@@ -62,6 +59,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           <FolderSearch className="w-4 h-4 text-zinc-400 shrink-0 mr-2.5" />
           <input
+            ref={inputRef}
             type="text"
             value={driveUrlInput}
             onChange={(e) => onDriveUrlChange(e.target.value)}
@@ -75,7 +73,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               type="button"
               onClick={() => onDriveUrlChange('')}
-              className="text-xs text-zinc-500 hover:text-zinc-300 px-1.5 whitespace-nowrap shrink-0"
+              className="text-xs text-zinc-500 hover:text-zinc-300 px-1.5 whitespace-nowrap shrink-0 cursor-pointer"
               title="Xóa đường dẫn"
             >
               Xóa
@@ -86,31 +84,16 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="submit"
           disabled={isLoading || !driveUrlInput.trim()}
-          className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:pointer-events-none text-zinc-100 border border-zinc-700 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+          className="px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
         >
           {isLoading ? (
             <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
               <span>Đang quét...</span>
             </>
           ) : (
             <span>Tải thư mục</span>
           )}
-        </button>
-
-        <button
-          type="button"
-          onClick={onLoadDemoMode}
-          disabled={isLoading}
-          className={`px-3.5 py-2 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
-            isDemoActive
-              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25'
-              : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
-          }`}
-          title="Nạp bộ dữ liệu mẫu gồm 5 thư mục sự kiện tiếng Việt để trải nghiệm ngay"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Dùng thử dữ liệu mẫu</span>
         </button>
       </form>
 
@@ -132,12 +115,12 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={onOpenExportModal}
           disabled={keptCount === 0}
-          className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap shrink-0 cursor-pointer"
+          className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap shrink-0 cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Xuất hàng loạt</span>
           {totalCount > 0 && (
-            <span className="font-mono tabular-nums text-indigo-200 font-normal">
+            <span className="font-mono tabular-nums text-emerald-100 font-normal">
               ({keptCount}/{totalCount})
             </span>
           )}

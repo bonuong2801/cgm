@@ -1,20 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   ChevronLeft,
   ChevronRight,
   Crop,
-  Film,
-  Pause,
-  Play,
   RotateCcw,
   Trash2,
   X,
 } from 'lucide-react';
 import { DriveMediaItem } from '../types/media';
-import {
-  LiveEditedPhotoPreview,
-  formatVideoDuration,
-} from './VirtualMediaGrid';
+import { LiveEditedPhotoPreview } from './VirtualMediaGrid';
 
 interface LightboxModalProps {
   item: DriveMediaItem | null;
@@ -37,24 +31,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   currentIndex,
   totalFiltered,
 }) => {
-  const [demoVideoPlaying, setDemoVideoPlaying] = useState(true);
-  const [demoVideoProgress, setDemoVideoProgress] = useState(0);
-
-  useEffect(() => {
-    setDemoVideoPlaying(true);
-    setDemoVideoProgress(0);
-  }, [item?.id]);
-
-  useEffect(() => {
-    if (!item || item.mediaType !== 'video' || !item.isDemo || !demoVideoPlaying) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      setDemoVideoProgress((prev) => (prev >= 100 ? 0 : prev + 1.5));
-    }, 200);
-    return () => window.clearInterval(timer);
-  }, [item, demoVideoPlaying]);
-
   if (!item) return null;
 
   const isVideo = item.mediaType === 'video';
@@ -154,74 +130,14 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           {isVideo ? (
-            item.isDemo ? (
-              /* Interactive Demo Mode Video Player + Google Drive Embed Structure Info */
-              <div className="w-full max-w-4xl aspect-video bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden flex flex-col shadow-2xl relative">
-                <div className="relative flex-1 overflow-hidden flex items-center justify-center">
-                  <img
-                    src={item.previewUrl}
-                    alt={item.name}
-                    className={`w-full h-full object-cover transition-transform duration-500 ${
-                      demoVideoPlaying ? 'scale-103' : 'scale-100'
-                    }`}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/40 flex flex-col justify-between p-6">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-emerald-300 flex items-center gap-1.5">
-                        <Film className="w-4 h-4" />
-                        <span>
-                          Trình phát Video trực tiếp (Google Drive Iframe Stream)
-                        </span>
-                      </span>
-                      <span className="text-xs font-mono tabular-nums text-zinc-300">
-                        Thời lượng: {formatVideoDuration(item.durationMillis)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={() => setDemoVideoPlaying((p) => !p)}
-                        className="w-16 h-16 rounded-full bg-indigo-600/90 hover:bg-indigo-500 text-white flex items-center justify-center shadow-xl cursor-pointer transition-transform hover:scale-105"
-                      >
-                        {demoVideoPlaying ? (
-                          <Pause className="w-7 h-7 fill-white" />
-                        ) : (
-                          <Play className="w-7 h-7 fill-white ml-1" />
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-indigo-500 transition-all duration-200"
-                          style={{ width: `${demoVideoProgress}%` }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-zinc-400">
-                        <span>
-                          {demoVideoPlaying ? 'Đang phát luồng mẫu...' : 'Đã tạm dừng'}
-                        </span>
-                        <span className="font-mono text-[11px] text-zinc-500">
-                          Embed URL: {driveEmbedUrl}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Real Google Drive Video Adaptive Streaming Iframe */
-              <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
-                <iframe
-                  src={driveEmbedUrl}
-                  title={item.name}
-                  className="w-full h-full border-0"
-                  allow="autoplay; fullscreen"
-                />
-              </div>
-            )
+            <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+              <iframe
+                src={driveEmbedUrl}
+                title={item.name}
+                className="w-full h-full border-0"
+                allow="autoplay; fullscreen"
+              />
+            </div>
           ) : (
             <div className="max-w-full max-h-full flex items-center justify-center">
               <LiveEditedPhotoPreview

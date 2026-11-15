@@ -10,7 +10,6 @@ import {
   RotateCcw,
   RotateCw,
   Sliders,
-  Sparkles,
   Stamp,
   Trash2,
   Upload,
@@ -23,7 +22,6 @@ import {
   LogoPosition,
 } from '../types/media';
 import { loadImageElement } from '../services/imageProcessor';
-import { createSampleStudioLogoDataUrl } from '../services/mockData';
 import { formatVideoDuration } from './VirtualMediaGrid';
 
 interface EditorInspectorProps {
@@ -166,21 +164,6 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
     };
     reader.readAsDataURL(file);
     e.target.value = '';
-  };
-
-  const handleLoadSampleLogo = () => {
-    const sample = createSampleStudioLogoDataUrl();
-    onUpdateEdit(selectedItem.id, (prev) => ({
-      ...prev,
-      logo: {
-        ...prev.logo,
-        enabled: true,
-        dataUrl: sample.dataUrl,
-        fileName: sample.fileName,
-        naturalWidth: sample.naturalWidth,
-        naturalHeight: sample.naturalHeight,
-      },
-    }));
   };
 
   const updateLogoField = <K extends keyof LogoConfig>(
@@ -512,26 +495,14 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
             className="hidden"
           />
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="py-2 px-2.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <Upload className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-              <span className="truncate">Tải Logo lên</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleLoadSampleLogo}
-              className="py-2 px-2.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-emerald-300 flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-              title="Dùng thử Logo CGM Studio mẫu"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="truncate">Logo mẫu</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full py-2 px-3 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+            <span className="truncate">Tải Logo từ máy tính (PNG, SVG, JPG)</span>
+          </button>
 
           {edit.logo.dataUrl && (
             <div className="space-y-3 pt-1">

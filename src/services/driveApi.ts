@@ -122,7 +122,7 @@ async function fetchFolderChildren(
     if (response.status === 401 || response.status === 403) {
       if (errorDetail.toLowerCase().includes('quota')) {
         throw new Error(
-          'Đã vượt quá giới hạn truy cập (Quota) của Google Drive API. Vui lòng thử lại sau ít phút hoặc dùng Chế độ Demo.'
+          'Đã vượt quá giới hạn truy cập (Quota) của Google Drive API. Vui lòng thử lại sau ít phút.'
         );
       }
       throw new Error(
@@ -228,7 +228,7 @@ export async function crawlGoogleDriveFolder(
   const apiKey = getGoogleDriveApiKey();
   if (!apiKey) {
     throw new Error(
-      'Chưa cấu hình khóa VITE_GOOGLE_API_KEY trong môi trường. Bạn có thể nhấn nút "Dùng thử dữ liệu mẫu" trên thanh công cụ để trải nghiệm đầy đủ tính năng ngay lập tức!'
+      'Chưa cấu hình biến môi trường VITE_GOOGLE_API_KEY. Vui lòng thêm VITE_GOOGLE_API_KEY vào phần Environment Variables trên Vercel hoặc file .env.'
     );
   }
 

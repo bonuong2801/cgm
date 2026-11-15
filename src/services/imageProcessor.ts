@@ -114,7 +114,6 @@ async function fetchImageAsObjectUrl(
   item: DriveMediaItem,
   signal?: AbortSignal
 ): Promise<{ objectUrl: string; revokeAfterUse: boolean }> {
-  // If demo item or data URL, use directly
   if (
     item.downloadUrl.startsWith('data:') ||
     item.downloadUrl.startsWith('blob:')
