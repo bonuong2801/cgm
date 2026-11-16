@@ -346,14 +346,25 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           onDoubleClick={handleDoubleClickPhoto}
         >
           {isVideo ? (
-            <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
-              <iframe
-                src={driveEmbedUrl}
-                title={item.name}
-                className="w-full h-full border-0"
-                allow="autoplay; fullscreen"
-              />
-            </div>
+            item.downloadUrl.startsWith('blob:') ? (
+              <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl flex items-center justify-center">
+                <video
+                  src={item.downloadUrl}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+                <iframe
+                  src={driveEmbedUrl}
+                  title={item.name}
+                  className="w-full h-full border-0"
+                  allow="autoplay; fullscreen"
+                />
+              </div>
+            )
           ) : (
             <div
               className="max-w-full max-h-full flex items-center justify-center"

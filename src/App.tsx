@@ -11,6 +11,7 @@ import {
   MediaTypeFilter,
 } from './types/media';
 import { crawlGoogleDriveFolder } from './services/driveApi';
+import { importFilesFromComputer } from './services/localFileLoader';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { TopBar } from './components/TopBar';
 import { FolderSidebar } from './components/FolderSidebar';
@@ -117,13 +118,23 @@ export default function App() {
       const result = await crawlGoogleDriveFolder(driveUrlInput, (msg) =>
         setLoadingStatusText(msg)
       );
+      // Apply active globalLogo if user already configured one
+      const itemsWithLogo =
+        globalLogo.enabled && globalLogo.dataUrl
+          ? result.items.map((item) =>
+              item.mediaType === 'image'
+                ? { ...item, edit: { ...item.edit, logo: { ...globalLogo } } }
+                : item
+            )
+          : result.items;
+
       setFolders(result.folders);
-      setItems(result.items);
+      setItems(itemsWithLogo);
       setSelectedFolderId('ALL');
       setStatusFilter('kept');
       setRejectedHistoryIds([]);
       setCheckedItemIds(new Set());
-      setSelectedItemId(result.items[0]?.id || null);
+      setSelectedItemId(itemsWithLogo[0]?.id || null);
     } catch (err: any) {
       setErrorMessage(
         err?.message ||
@@ -134,6 +145,71 @@ export default function App() {
       setLoadingStatusText('');
     }
   };
+
+  // Import Local Photos / Folders from Computer in Bulk
+  const handleImportLocalFiles = useCallback(
+    async (fileList: FileList | File[]) => {
+      setIsLoading(true);
+      setErrorMessage(null);
+      setLoadingStatusText('Đang nạp hàng loạt ảnh từ máy tính...');
+
+      try {
+        const result = await importFilesFromComputer(
+          fileList,
+          globalLogo.enabled && globalLogo.dataUrl ? globalLogo : undefined,
+          (msg) => setLoadingStatusText(msg)
+        );
+
+        setFolders((prevFolders) => {
+          const map = new Map<string, DriveFolder>();
+          for (const f of prevFolders) map.set(f.id, f);
+          for (const f of result.folders) map.set(f.id, f);
+          return Array.from(map.values());
+        });
+
+        setItems((prevItems) => [...prevItems, ...result.items]);
+        setStatusFilter('kept');
+        if (!selectedItemId && result.items[0]) {
+          setSelectedItemId(result.items[0].id);
+        }
+      } catch (err: any) {
+        setErrorMessage(
+          err?.message || 'Không thể đọc tệp ảnh từ máy tính.'
+        );
+      } finally {
+        setIsLoading(false);
+        setLoadingStatusText('');
+      }
+    },
+    [globalLogo, selectedItemId]
+  );
+
+  // Lazily update exact naturalWidth & naturalHeight as local thumbnails render
+  const handleUpdateDetectedDimensions = useCallback(
+    (itemId: string, width: number, height: number) => {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId && (item.width !== width || item.height !== height)
+            ? { ...item, width, height }
+            : item
+        )
+      );
+    },
+    []
+  );
+
+  // Clear all items in workspace to start a fresh batch
+  const handleClearAllWorkspace = useCallback(() => {
+    setFolders([]);
+    setItems([]);
+    setSelectedFolderId('ALL');
+    setSelectedItemId(null);
+    setLightboxItemId(null);
+    setCropModalItemId(null);
+    setCheckedItemIds(new Set());
+    setRejectedHistoryIds([]);
+    setErrorMessage(null);
+  }, []);
 
   // Multi-select checkbox toggle
   const handleToggleCheckItem = useCallback(
@@ -506,6 +582,8 @@ export default function App() {
         driveUrlInput={driveUrlInput}
         onDriveUrlChange={setDriveUrlInput}
         onLoadDriveUrl={handleLoadDriveUrl}
+        onImportLocalFiles={handleImportLocalFiles}
+        onClearAllWorkspace={handleClearAllWorkspace}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         isLoading={isLoading}
         keptCount={totalKeptCount}
@@ -567,8 +645,10 @@ export default function App() {
             setLightboxItemId(item.id);
           }}
           onToggleRejectStatus={handleToggleRejectStatus}
+          onUpdateDetectedDimensions={handleUpdateDetectedDimensions}
           gridColumns={gridColumns}
           onFocusDriveInput={() => driveInputRef.current?.focus()}
+          onImportLocalFiles={handleImportLocalFiles}
           hasAnyLoadedItems={items.length > 0}
         />
 

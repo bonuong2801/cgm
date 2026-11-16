@@ -1,8 +1,10 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   CheckSquare,
   Crop,
+  FolderUp,
+  ImagePlus,
   Maximize2,
   Play,
   RotateCcw,
@@ -10,6 +12,7 @@ import {
   Square,
   Stamp,
   Trash2,
+  UploadCloud,
 } from 'lucide-react';
 import {
   DriveMediaItem,
@@ -17,6 +20,7 @@ import {
   isPhotoEdited,
 } from '../types/media';
 import { buildCssFilterString } from '../services/imageProcessor';
+import { extractFilesFromDataTransfer } from '../services/localFileLoader';
 
 interface VirtualMediaGridProps {
   items: DriveMediaItem[];
@@ -28,8 +32,14 @@ interface VirtualMediaGridProps {
   onClearCheckedItems: () => void;
   onOpenLightbox: (item: DriveMediaItem) => void;
   onToggleRejectStatus: (item: DriveMediaItem, e?: React.MouseEvent) => void;
+  onUpdateDetectedDimensions?: (
+    itemId: string,
+    width: number,
+    height: number
+  ) => void;
   gridColumns: number;
   onFocusDriveInput: () => void;
+  onImportLocalFiles: (files: FileList | File[]) => void;
   hasAnyLoadedItems: boolean;
 }
 
@@ -72,8 +82,9 @@ export function getLogoOverlayPositionStyle(
 export const LiveEditedPhotoPreview: React.FC<{
   item: DriveMediaItem;
   useHighRes?: boolean;
+  onDimensionsDetected?: (itemId: string, w: number, h: number) => void;
   className?: string;
-}> = ({ item, useHighRes = false, className = '' }) => {
+}> = ({ item, useHighRes = false, onDimensionsDetected, className = '' }) => {
   const src = useHighRes ? item.previewUrl : item.gridThumbUrl;
   const { edit } = item;
   const cssFilter = buildCssFilterString(edit);
@@ -101,6 +112,19 @@ export const LiveEditedPhotoPreview: React.FC<{
     ? edit.logo.scalePercent
     : edit.logo.scalePercent * (finalH / Math.max(1, finalW));
 
+  const handleImageLoaded = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const natW = e.currentTarget.naturalWidth;
+    const natH = e.currentTarget.naturalHeight;
+    if (
+      onDimensionsDetected &&
+      natW > 0 &&
+      natH > 0 &&
+      (natW !== item.width || natH !== item.height)
+    ) {
+      onDimensionsDetected(item.id, natW, natH);
+    }
+  };
+
   return (
     <div
       className={`relative overflow-hidden bg-zinc-950 flex items-center justify-center ${className}`}
@@ -115,6 +139,7 @@ export const LiveEditedPhotoPreview: React.FC<{
             alt={item.name}
             referrerPolicy="no-referrer"
             loading="lazy"
+            onLoad={handleImageLoaded}
             className="max-w-none select-none pointer-events-none"
             style={{
               width: `${(100 / Math.max(1, cropPercent.width)) * 100}%`,
@@ -131,6 +156,7 @@ export const LiveEditedPhotoPreview: React.FC<{
           alt={item.name}
           referrerPolicy="no-referrer"
           loading="lazy"
+          onLoad={handleImageLoaded}
           className="w-full h-full object-contain select-none pointer-events-none transition-transform duration-150"
           style={{
             transform:
@@ -170,11 +196,16 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   onClearCheckedItems,
   onOpenLightbox,
   onToggleRejectStatus,
+  onUpdateDetectedDimensions,
   gridColumns,
   onFocusDriveInput,
+  onImportLocalFiles,
   hasAnyLoadedItems,
 }) => {
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const bulkFileInputRef = useRef<HTMLInputElement | null>(null);
+  const bulkFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
   const visiblePhotoCount = useMemo(
     () => items.filter((i) => i.mediaType === 'image').length,
@@ -214,29 +245,103 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
     overscan: 4,
   });
 
-  // Empty State when no Drive folder is loaded yet
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onImportLocalFiles(Array.from(e.target.files));
+      e.target.value = '';
+    }
+  };
+
+  const handleDropFiles = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    const extracted = await extractFilesFromDataTransfer(e.dataTransfer);
+    if (extracted.length > 0) {
+      onImportLocalFiles(extracted);
+    }
+  };
+
+  // Shared hidden inputs so both empty state and populated toolbar can trigger bulk upload
+  const hiddenInputs = (
+    <>
+      <input
+        ref={bulkFileInputRef}
+        type="file"
+        multiple
+        accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.bmp,.gif,.svg,.avif,.mp4,.mov"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+      <input
+        ref={bulkFolderInputRef}
+        type="file"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+    </>
+  );
+
+  // Empty State when no Drive folder or local files are loaded yet
   if (!hasAnyLoadedItems) {
     return (
-      <main className="flex-1 bg-zinc-950 flex items-center justify-center p-8 select-none">
-        <div className="max-w-lg w-full bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center space-y-5">
-          <div className="w-12 h-12 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center mx-auto text-indigo-400 font-bold text-sm">
-            CGM
+      <main
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!isDraggingOver) setIsDraggingOver(true);
+        }}
+        onDragLeave={() => setIsDraggingOver(false)}
+        onDrop={handleDropFiles}
+        className="flex-1 bg-zinc-950 flex items-center justify-center p-8 select-none"
+      >
+        {hiddenInputs}
+
+        <div
+          className={`max-w-xl w-full bg-zinc-900 border-2 border-dashed rounded-xl p-8 text-center space-y-5 transition-colors ${
+            isDraggingOver
+              ? 'border-emerald-500 bg-emerald-500/10'
+              : 'border-zinc-800 hover:border-zinc-700'
+          }`}
+        >
+          <div className="w-14 h-14 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+            <UploadCloud className="w-7 h-7" />
           </div>
           <div className="space-y-2">
             <h1 className="text-lg font-bold text-zinc-100">
-              Nhập đường liên kết thư mục Google Drive
+              Tải hàng loạt ảnh từ máy tính hoặc dán link Google Drive
             </h1>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Dán đường liên kết thư mục Google Drive công khai (&ldquo;Bất kỳ ai có đường liên kết đều có thể xem&rdquo;) vào thanh tìm kiếm phía trên để tự động quét song song các thư mục con, lọc ảnh 60fps, chỉnh màu, đóng dấu logo và xuất hàng loạt.
+              Nhấn <strong className="text-zinc-200">&ldquo;Chọn hàng loạt ảnh từ máy&rdquo;</strong> (bấm <code className="text-emerald-300">Ctrl + A</code> hoặc giữ <code className="text-emerald-300">Shift</code> để chọn hàng trăm ảnh cùng lúc), hoặc <strong className="text-zinc-200">kéo thả nhiều ảnh / nguyên thư mục</strong> trực tiếp vào khung này để gắn Logo đồng loạt.
             </p>
           </div>
-          <div className="pt-2 flex items-center justify-center">
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => bulkFileInputRef.current?.click()}
+              className="px-5 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+            >
+              <ImagePlus className="w-4 h-4" />
+              <span>Chọn hàng loạt ảnh từ máy (Nhiều ảnh)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => bulkFolderInputRef.current?.click()}
+              className="px-4 py-2.5 text-xs font-semibold text-zinc-200 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <FolderUp className="w-4 h-4 text-indigo-400" />
+              <span>Tải nguyên thư mục ảnh</span>
+            </button>
+
             <button
               type="button"
               onClick={onFocusDriveInput}
-              className="px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors cursor-pointer shadow-sm"
+              className="px-4 py-2.5 text-xs font-medium text-zinc-300 hover:text-white bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors cursor-pointer"
             >
-              Dán link thư mục Google Drive ngay
+              Dán link Google Drive
             </button>
           </div>
         </div>
@@ -248,6 +353,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   if (items.length === 0) {
     return (
       <main className="flex-1 bg-zinc-950 flex items-center justify-center p-8 select-none">
+        {hiddenInputs}
         <div className="max-w-md text-center space-y-2">
           <p className="text-sm font-semibold text-zinc-300">
             Không có file nào khớp với bộ lọc hiện tại
@@ -261,44 +367,76 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   }
 
   return (
-    <div className="flex-1 bg-zinc-950 flex flex-col min-w-0 overflow-hidden select-none">
-      {/* Sub-header Multi-Select Bar for Batch Logo / Actions */}
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (!isDraggingOver) setIsDraggingOver(true);
+      }}
+      onDragLeave={() => setIsDraggingOver(false)}
+      onDrop={handleDropFiles}
+      className="flex-1 bg-zinc-950 flex flex-col min-w-0 overflow-hidden select-none relative"
+    >
+      {hiddenInputs}
+
+      {/* Drag-and-drop overlay indicator when dropping more files */}
+      {isDraggingOver && (
+        <div className="absolute inset-4 z-30 rounded-xl bg-emerald-950/80 border-2 border-dashed border-emerald-400 flex flex-col items-center justify-center pointer-events-none">
+          <UploadCloud className="w-10 h-10 text-emerald-400 mb-2" />
+          <span className="text-sm font-bold text-white">
+            Thả ảnh hoặc thư mục vào đây để thêm hàng loạt
+          </span>
+        </div>
+      )}
+
+      {/* Sub-header Multi-Select & Bulk Upload Bar */}
       <div className="h-10 px-4 bg-zinc-900/60 border-b border-zinc-800/80 flex items-center justify-between gap-4 shrink-0 text-xs">
-        <div className="flex items-center gap-3">
-          <span className="text-zinc-400">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-zinc-400 whitespace-nowrap">
             Hiển thị <strong className="text-zinc-200 font-mono">{items.length}</strong> file
           </span>
           {checkedItemIds.size > 0 && (
             <>
               <span className="text-zinc-700" aria-hidden="true">·</span>
-              <span className="text-emerald-400 font-medium">
-                Đã tích chọn {checkedItemIds.size} ảnh để gắn Logo / xử lý riêng
+              <span className="text-emerald-400 font-medium truncate">
+                Đã tích chọn {checkedItemIds.size} ảnh để gắn Logo hàng loạt
               </span>
             </>
           )}
         </div>
 
-        {visiblePhotoCount > 0 && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onSelectAllVisiblePhotos}
-              className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Chọn tất cả ảnh đang xem ({visiblePhotoCount})</span>
-            </button>
-            {checkedItemIds.size > 0 && (
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => bulkFileInputRef.current?.click()}
+            className="px-2.5 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+            title="Chọn thêm hàng loạt ảnh từ máy tính vào danh sách hiện tại"
+          >
+            <ImagePlus className="w-3.5 h-3.5 text-emerald-400" />
+            <span>+ Thêm hàng loạt ảnh</span>
+          </button>
+
+          {visiblePhotoCount > 0 && (
+            <>
               <button
                 type="button"
-                onClick={onClearCheckedItems}
-                className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors"
+                onClick={onSelectAllVisiblePhotos}
+                className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
               >
-                Bỏ chọn ({checkedItemIds.size})
+                <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Chọn tất cả ({visiblePhotoCount})</span>
               </button>
-            )}
-          </div>
-        )}
+              {checkedItemIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={onClearCheckedItems}
+                  className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors"
+                >
+                  Bỏ chọn ({checkedItemIds.size})
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Virtualized Grid Viewport */}
@@ -385,6 +523,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                             <LiveEditedPhotoPreview
                               item={item}
                               useHighRes={false}
+                              onDimensionsDetected={onUpdateDetectedDimensions}
                               className="w-full h-full"
                             />
                           )}
