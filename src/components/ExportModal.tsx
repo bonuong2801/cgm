@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,29 +8,32 @@ import {
   Loader2,
   RefreshCw,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   DriveMediaItem,
   ExportFailedItem,
+  ExportMaxDimension,
   ExportOptions,
   ExportProgressState,
   ImageExportFormat,
   ImageQualityPreset,
   NumberingRule,
   RenameMode,
-} from '../types/media';
+} from '../types/media.ts';
 import {
   PlannedExportTask,
   buildExportPlan,
   formatExportFileName,
   runBatchExportTasks,
   sanitizeFolderNameForDisk,
-} from '../services/batchExporter';
+} from '../services/batchExporter.ts';
 
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   allItems: DriveMediaItem[];
+  checkedItemIds: Set<string>;
   selectedFolderId: string;
   selectedFolderName: string;
 }
@@ -48,20 +51,37 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
   allItems,
+  checkedItemIds,
   selectedFolderId,
   selectedFolderName,
 }) => {
   const [options, setOptions] = useState<ExportOptions>({
-    scope: selectedFolderId === 'ALL' ? 'all-folders' : 'current-folder',
+    scope: 'all-folders',
     includeVideos: true,
     format: 'image/jpeg',
     quality: 0.92,
+    maxDimension: 0,
+    skipReencodeIfUnedited: true,
     renameMode: 'custom',
     customPattern: '{prefix}_{folder}_{index3}',
     customPrefix: 'CGM_SuKien',
     startIndex: 1,
     numberingRule: 'per-folder',
   });
+
+  // Sync sensible default scope whenever modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setOptions((prev) => ({
+      ...prev,
+      scope:
+        checkedItemIds.size > 0
+          ? 'checked-only'
+          : selectedFolderId === 'ALL'
+          ? 'all-folders'
+          : 'current-folder',
+    }));
+  }, [isOpen, checkedItemIds.size, selectedFolderId]);
 
   const [progress, setProgress] = useState<ExportProgressState>({
     isRunning: false,
@@ -76,9 +96,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [hasFinishedRun, setHasFinishedRun] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Compute eligible kept items based on scope & includeVideos
   const eligibleItems = useMemo(() => {
     return allItems.filter((item) => {
+      if (options.scope === 'checked-only') {
+        return checkedItemIds.has(item.id);
+      }
       if (item.status !== 'kept') return false;
       if (
         options.scope === 'current-folder' &&
@@ -92,7 +114,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
       return true;
     });
-  }, [allItems, options.scope, options.includeVideos, selectedFolderId]);
+  }, [
+    allItems,
+    checkedItemIds,
+    options.scope,
+    options.includeVideos,
+    selectedFolderId,
+  ]);
 
   const keptPhotosCount = useMemo(
     () => eligibleItems.filter((i) => i.mediaType === 'image').length,
@@ -104,7 +132,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     [eligibleItems]
   );
 
-  // Sample item for live filename preview
   const samplePreviewItem = useMemo<DriveMediaItem>(() => {
     if (eligibleItems.length > 0) return eligibleItems[0];
     return {
@@ -120,7 +147,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       width: 1800,
       height: 1200,
       status: 'kept',
-      edit: {} as any,
+      rating: 0,
+      edit: { logos: [] } as any,
     };
   }, [eligibleItems]);
 
@@ -156,7 +184,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       currentFileName: tasksToRun[0]?.targetFileName || '',
       failedItems: [],
       completedSuccessCount: 0,
-      exportMethodLabel: 'Đang khởi tạo hàng đợi 4 luồng xử lý...',
+      exportMethodLabel: 'Đang khởi tạo 4 luồng OffscreenCanvas Worker...',
     });
 
     try {
@@ -222,6 +250,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Xuất hàng loạt ảnh và video"
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 select-none"
       onClick={() => {
         if (!progress.isRunning) onClose();
@@ -231,18 +262,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header */}
+        {/* Header */}
         <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <FolderTree className="w-4 h-4 text-indigo-400" />
+            <FolderTree className="w-4 h-4 text-indigo-400" aria-hidden="true" />
             <h2 className="text-sm font-bold text-zinc-100">
-              Xuất hàng loạt Ảnh đã chỉnh sửa &amp; Video gốc
+              Xuất hàng loạt Ảnh (Ghép đa Logo) &amp; Video gốc
             </h2>
           </div>
           {!progress.isRunning && (
             <button
               type="button"
               onClick={onClose}
+              aria-label="Đóng bảng xuất file"
               className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -250,29 +282,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           )}
         </div>
 
-        {/* Modal Body */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* 1. Export Scope (Phạm vi xuất) */}
+          {/* 1. Export Scope */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-zinc-300 block">
               1. Phạm vi xuất dữ liệu
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button
                 type="button"
                 disabled={progress.isRunning}
                 onClick={() =>
                   setOptions((p) => ({ ...p, scope: 'all-folders' }))
                 }
-                className={`p-3 rounded-lg border text-left transition-colors cursor-pointer ${
+                className={`p-2.5 rounded-lg border text-left transition-colors cursor-pointer ${
                   options.scope === 'all-folders'
                     ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
                     : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:bg-zinc-800/60'
                 }`}
               >
-                <div className="text-xs font-semibold">Tất cả các thư mục</div>
+                <div className="text-xs font-semibold">Tất cả thư mục</div>
                 <div className="text-[11px] text-zinc-400 mt-0.5">
-                  Tái tạo nguyên vẹn cấu trúc toàn bộ thư mục con
+                  Giữ nguyên cây thư mục
                 </div>
               </button>
 
@@ -282,27 +314,45 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 onClick={() =>
                   setOptions((p) => ({ ...p, scope: 'current-folder' }))
                 }
-                className={`p-3 rounded-lg border text-left transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+                className={`p-2.5 rounded-lg border text-left transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
                   options.scope === 'current-folder'
                     ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
                     : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:bg-zinc-800/60'
                 }`}
               >
-                <div className="text-xs font-semibold">
-                  Chỉ thư mục đang xem
-                </div>
+                <div className="text-xs font-semibold">Thư mục đang xem</div>
                 <div className="text-[11px] text-zinc-400 mt-0.5 truncate">
                   {selectedFolderId === 'ALL'
-                    ? 'Đang chọn Tất cả thư mục'
-                    : `Thư mục: ${selectedFolderName}`}
+                    ? 'Đang ở Tất cả'
+                    : selectedFolderName}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={progress.isRunning || checkedItemIds.size === 0}
+                onClick={() =>
+                  setOptions((p) => ({ ...p, scope: 'checked-only' }))
+                }
+                className={`p-2.5 rounded-lg border text-left transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+                  options.scope === 'checked-only'
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:bg-zinc-800/60'
+                }`}
+              >
+                <div className="text-xs font-semibold">Ảnh đã tích chọn</div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">
+                  {checkedItemIds.size > 0
+                    ? `${checkedItemIds.size} ảnh đã chọn`
+                    : 'Chưa tích chọn'}
                 </div>
               </button>
             </div>
           </div>
 
-          {/* 2. Video Inclusion Toggle */}
-          <div className="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800 flex items-start justify-between gap-4">
-            <label className="flex items-start gap-2.5 cursor-pointer">
+          {/* 2. Video & Fast-Path Zero-Reencode Toggles */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <label className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-start gap-2.5 cursor-pointer">
               <input
                 type="checkbox"
                 disabled={progress.isRunning}
@@ -315,37 +365,53 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 }
                 className="mt-0.5 accent-indigo-500 rounded cursor-pointer"
               />
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs font-semibold text-zinc-200">
-                  Tải kèm toàn bộ file Video gốc vào đúng thư mục
+                  Xuất kèm Video gốc ({keptVideosCount} video)
                 </div>
                 <div className="text-[11px] text-zinc-400 mt-0.5">
-                  Sử dụng công nghệ luồng trực tiếp Zero-RAM giúp tải file video dung lượng lớn không gây tràn bộ nhớ trình duyệt.
+                  Truyền luồng Zero-RAM thẳng vào ổ cứng
                 </div>
               </div>
             </label>
 
-            <div className="text-right font-mono tabular-nums text-xs shrink-0">
-              <div className="text-indigo-300 font-semibold">
-                {keptPhotosCount} ảnh
+            <label className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                disabled={progress.isRunning}
+                checked={options.skipReencodeIfUnedited}
+                onChange={(e) =>
+                  setOptions((p) => ({
+                    ...p,
+                    skipReencodeIfUnedited: e.target.checked,
+                  }))
+                }
+                className="mt-0.5 accent-emerald-500 rounded cursor-pointer"
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-zinc-200 flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span>Giữ byte gốc nếu không sửa</span>
+                </div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">
+                  Bảo toàn EXIF &amp; nhanh gấp 10 lần cho ảnh mộc
+                </div>
               </div>
-              <div className="text-emerald-400 text-[11px]">
-                + {keptVideosCount} video
-              </div>
-            </div>
+            </label>
           </div>
 
-          {/* 3. Output Image Format & Quality */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* 3. Format, Quality & Max Dimension Resize */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-zinc-300 block">
-                3. Định dạng ảnh xuất ra
+                3. Định dạng ảnh
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 {(
                   [
-                    { val: 'image/jpeg', label: 'JPG (Mặc định)' },
-                    { val: 'image/webp', label: 'WebP (Tối ưu)' },
+                    { val: 'image/jpeg', label: 'JPG' },
+                    { val: 'image/webp', label: 'WebP' },
+                    { val: 'image/png', label: 'PNG' },
                   ] as { val: ImageExportFormat; label: string }[]
                 ).map((fmt) => (
                   <button
@@ -355,7 +421,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     onClick={() =>
                       setOptions((p) => ({ ...p, format: fmt.val }))
                     }
-                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                    className={`py-2 px-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
                       options.format === fmt.val
                         ? 'bg-indigo-600 text-white border-indigo-500'
                         : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:bg-zinc-800'
@@ -369,10 +435,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-zinc-300 block">
-                Mức chất lượng hình ảnh
+                Kích thước xuất (Resize)
               </label>
               <select
                 disabled={progress.isRunning}
+                value={options.maxDimension}
+                onChange={(e) =>
+                  setOptions((p) => ({
+                    ...p,
+                    maxDimension: Number(e.target.value) as ExportMaxDimension,
+                  }))
+                }
+                className="w-full py-2 px-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500"
+              >
+                <option value={0}>Độ phân giải gốc (100%)</option>
+                <option value={3840}>Chuẩn In / 4K (3840px)</option>
+                <option value={2048}>Chuẩn MXH / Web (2048px)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-zinc-300 block">
+                Chất lượng nén
+              </label>
+              <select
+                disabled={progress.isRunning || options.format === 'image/png'}
                 value={options.quality}
                 onChange={(e) =>
                   setOptions((p) => ({
@@ -380,11 +467,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     quality: Number(e.target.value) as ImageQualityPreset,
                   }))
                 }
-                className="w-full py-2 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500"
+                className="w-full py-2 px-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500 disabled:opacity-40"
               >
-                <option value={0.8}>Tiết kiệm dung lượng (80%)</option>
-                <option value={0.92}>Tiêu chuẩn - Khuyên dùng (92%)</option>
-                <option value={1.0}>Chất lượng tối đa (100%)</option>
+                <option value={0.8}>Tiết kiệm (80%)</option>
+                <option value={0.92}>Tiêu chuẩn (92%)</option>
+                <option value={1.0}>Tối đa (100%)</option>
               </select>
             </div>
           </div>
@@ -400,7 +487,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 [
                   {
                     mode: 'original',
-                    label: 'Giữ nguyên tên file gốc trên Drive',
+                    label: 'Giữ nguyên tên file gốc',
                   },
                   {
                     mode: 'custom',
@@ -468,10 +555,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Clickable Dynamic Tokens */}
                 <div className="space-y-1.5">
                   <span className="text-[11px] text-zinc-400 block">
-                    Nhấp để chèn thẻ biến động vào mẫu tên file:
+                    Nhấp để chèn thẻ biến động:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {RENAME_TOKENS.map((t) => (
@@ -492,7 +578,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Start Index & Numbering Rule */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div className="space-y-1">
                     <label className="text-[11px] text-zinc-400 block">
@@ -529,7 +614,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       className="w-full px-3 py-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500"
                     >
                       <option value="per-folder">
-                        Đánh số lại từ đầu theo từng thư mục
+                        Đánh số lại theo từng thư mục
                       </option>
                       <option value="continuous">
                         Tăng liên tục toàn bộ
@@ -540,7 +625,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </div>
             )}
 
-            {/* Live Filename Preview Box */}
             <div className="px-3.5 py-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-between gap-3">
               <span className="text-xs text-zinc-300 flex items-center gap-1.5 shrink-0">
                 <FileText className="w-3.5 h-3.5 text-indigo-400" />
@@ -553,7 +637,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
           </div>
 
-          {/* 5. Export Progress & Error Retry View */}
+          {/* 5. Progress & Retry */}
           {(progress.isRunning || hasFinishedRun) && (
             <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
               <div className="flex items-center justify-between text-xs">
@@ -561,7 +645,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   {progress.isRunning ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                      <span>Đang xử lý xuất hàng loạt...</span>
+                      <span>Đang xử lý bằng 4 luồng Worker...</span>
                     </>
                   ) : progress.failedItems.length === 0 ? (
                     <>
@@ -581,12 +665,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </span>
 
                 <span className="font-mono tabular-nums text-zinc-300">
-                  Đã xử lý {progress.processedCount} / {progress.totalCount} file
-                  ({percentDone}%)
+                  {progress.processedCount} / {progress.totalCount} file (
+                  {percentDone}%)
                 </span>
               </div>
 
-              {/* Progress Bar */}
               <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-indigo-500 transition-all duration-150"
@@ -603,7 +686,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </span>
               </div>
 
-              {/* Failed Items List & Retry Button */}
               {progress.failedItems.length > 0 && !progress.isRunning && (
                 <div className="pt-2 border-t border-zinc-800 space-y-2">
                   <div className="flex items-center justify-between">
@@ -632,10 +714,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           )}
         </div>
 
-        {/* Modal Footer */}
+        {/* Footer */}
         <div className="px-6 py-4 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between">
           <div className="text-xs text-zinc-400 font-mono tabular-nums">
-            Tổng cộng xuất: {eligibleItems.length} file
+            Tổng xuất: {keptPhotosCount} ảnh · {keptVideosCount} video
           </div>
 
           <div className="flex items-center gap-2.5">

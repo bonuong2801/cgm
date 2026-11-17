@@ -2,43 +2,69 @@ export type MediaType = 'image' | 'video';
 
 export type CullingStatus = 'kept' | 'rejected';
 
-export type LogoPosition =
+export type StarRating = 0 | 1 | 2 | 3 | 4 | 5;
+
+export type LogoAnchorPosition =
   | 'top-left'
+  | 'top-center'
   | 'top-right'
+  | 'middle-left'
+  | 'center'
+  | 'middle-right'
   | 'bottom-left'
-  | 'bottom-right'
-  | 'center';
+  | 'bottom-center'
+  | 'bottom-right';
+
+export type LogoPosition = LogoAnchorPosition | 'custom';
 
 export interface CropArea {
-  x: number; // pixel x or percentage depending on context
+  x: number;
   y: number;
   width: number;
   height: number;
 }
 
-export interface LogoConfig {
+/**
+ * Represents a single Logo layer composited onto a photo.
+ * A photo can have multiple LogoLayers simultaneously (e.g., Organizer + Sponsor + Studio).
+ */
+export interface LogoLayer {
+  id: string;
   enabled: boolean;
-  dataUrl: string | null;
-  fileName: string | null;
+  dataUrl: string;
+  fileName: string;
   naturalWidth: number;
   naturalHeight: number;
   position: LogoPosition;
-  scalePercent: number; // 5% - 40% of shorter edge
-  marginPercent: number; // 1% - 15% of shorter edge
+  customXPercent: number; // 0 - 100 (center X% when position === 'custom')
+  customYPercent: number; // 0 - 100 (center Y% when position === 'custom')
+  scalePercent: number; // 4% - 50% of shorter edge
+  marginPercent: number; // 0% - 20% of shorter edge
   opacity: number; // 10 - 100 (%)
+}
+
+/**
+ * Saved preset in IndexedDB: stores an entire set of 1 or multiple LogoLayers
+ * so event studios can re-apply a full multi-sponsor layout in 1 click.
+ */
+export interface LogoSetPreset {
+  id: string;
+  name: string;
+  logos: LogoLayer[];
+  createdAt: number;
 }
 
 export interface EditConfig {
   brightness: number; // 50 - 150, default 100
   contrast: number; // 50 - 150, default 100
   saturation: number; // 0 - 200, default 100
-  warmth: number; // 0 - 50, default 0 (sepia %)
+  warmth: number; // -50 (cool) to +50 (warm), default 0
   rotation: 0 | 90 | 180 | 270;
-  aspectRatioLabel: string; // e.g. 'Tỷ lệ gốc', '1:1 (Vuông)', etc.
-  aspectRatioValue: number | null; // null = original or free
-  cropPercent: CropArea | null; // { x, y, width, height } in % (0..100) for fast CSS preview & resolution-independent export
-  croppedAreaPixels: CropArea | null; // exact pixel coordinates from react-easy-crop
-  logo: LogoConfig;
+  aspectRatioLabel: string;
+  aspectRatioValue: number | null;
+  cropPercent: CropArea | null;
+  croppedAreaPixels: CropArea | null;
+  logos: LogoLayer[];
 }
 
 export interface DriveFolder {
@@ -61,25 +87,43 @@ export interface DriveMediaItem {
   height: number;
   durationMillis?: number;
   status: CullingStatus;
+  rating: StarRating;
+  aiReason?: string;
+  isLocal?: boolean;
+  rawFile?: File;
   edit: EditConfig;
 }
 
 export type MediaTypeFilter = 'all' | 'image' | 'video';
+export type SortByOption =
+  | 'name-asc'
+  | 'name-desc'
+  | 'rating-desc'
+  | 'resolution-desc';
+export type QuickFilterOption =
+  | 'all'
+  | 'edited'
+  | 'unwatermarked'
+  | 'rated'
+  | 'ai-flagged';
 
 export type RenameMode = 'original' | 'custom';
 export type NumberingRule = 'per-folder' | 'continuous';
-export type ExportScope = 'all-folders' | 'current-folder';
-export type ImageExportFormat = 'image/jpeg' | 'image/webp';
+export type ExportScope = 'all-folders' | 'current-folder' | 'checked-only';
+export type ImageExportFormat = 'image/jpeg' | 'image/webp' | 'image/png';
 export type ImageQualityPreset = 0.8 | 0.92 | 1.0;
+export type ExportMaxDimension = 0 | 3840 | 2048;
 
 export interface ExportOptions {
   scope: ExportScope;
   includeVideos: boolean;
   format: ImageExportFormat;
   quality: ImageQualityPreset;
+  maxDimension: ExportMaxDimension;
+  skipReencodeIfUnedited: boolean;
   renameMode: RenameMode;
-  customPattern: string; // e.g. "{prefix}_{folder}_{index3}"
-  customPrefix: string; // e.g. "CGM_SuKien"
+  customPattern: string;
+  customPrefix: string;
   startIndex: number;
   numberingRule: NumberingRule;
 }
@@ -100,17 +144,49 @@ export interface ExportProgressState {
   exportMethodLabel: string;
 }
 
-export const DEFAULT_LOGO_CONFIG: LogoConfig = {
-  enabled: false,
-  dataUrl: null,
-  fileName: null,
-  naturalWidth: 0,
-  naturalHeight: 0,
-  position: 'bottom-right',
-  scalePercent: 16,
-  marginPercent: 4,
-  opacity: 90,
-};
+export const AUTO_LOGO_ANCHOR_ORDER: LogoAnchorPosition[] = [
+  'bottom-right',
+  'top-left',
+  'top-right',
+  'bottom-left',
+  'top-center',
+  'bottom-center',
+  'middle-left',
+  'middle-right',
+  'center',
+];
+
+export function createLogoLayer(
+  partial: Pick<
+    LogoLayer,
+    'dataUrl' | 'fileName' | 'naturalWidth' | 'naturalHeight'
+  > &
+    Partial<LogoLayer>,
+  existingCount = 0
+): LogoLayer {
+  const defaultAnchor =
+    AUTO_LOGO_ANCHOR_ORDER[existingCount % AUTO_LOGO_ANCHOR_ORDER.length];
+  return {
+    id:
+      partial.id ||
+      `logo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    enabled: partial.enabled ?? true,
+    dataUrl: partial.dataUrl,
+    fileName: partial.fileName,
+    naturalWidth: partial.naturalWidth,
+    naturalHeight: partial.naturalHeight,
+    position: partial.position ?? defaultAnchor,
+    customXPercent: partial.customXPercent ?? 50,
+    customYPercent: partial.customYPercent ?? 50,
+    scalePercent: partial.scalePercent ?? 15,
+    marginPercent: partial.marginPercent ?? 3.5,
+    opacity: partial.opacity ?? 92,
+  };
+}
+
+export function cloneLogoLayers(logos: LogoLayer[]): LogoLayer[] {
+  return logos.map((l) => ({ ...l }));
+}
 
 export const DEFAULT_EDIT_CONFIG: EditConfig = {
   brightness: 100,
@@ -122,30 +198,42 @@ export const DEFAULT_EDIT_CONFIG: EditConfig = {
   aspectRatioValue: null,
   cropPercent: null,
   croppedAreaPixels: null,
-  logo: { ...DEFAULT_LOGO_CONFIG },
+  logos: [],
 };
+
+export function getActiveLogos(edit: EditConfig): LogoLayer[] {
+  return (edit.logos || []).filter((l) => Boolean(l.enabled && l.dataUrl));
+}
 
 export function isPhotoEdited(edit: EditConfig): {
   isCropped: boolean;
   isColorEdited: boolean;
   isWatermarked: boolean;
+  activeLogoCount: number;
   hasAnyEdit: boolean;
 } {
+  const cp = edit.cropPercent;
+  const hasMeaningfulCrop = Boolean(
+    cp &&
+      (cp.width < 99.8 || cp.height < 99.8 || cp.x > 0.1 || cp.y > 0.1)
+  );
   const isCropped =
+    hasMeaningfulCrop ||
     edit.croppedAreaPixels !== null ||
-    edit.cropPercent !== null ||
     edit.rotation !== 0;
   const isColorEdited =
     edit.brightness !== 100 ||
     edit.contrast !== 100 ||
     edit.saturation !== 100 ||
     edit.warmth !== 0;
-  const isWatermarked = Boolean(edit.logo.enabled && edit.logo.dataUrl);
+  const activeLogoCount = getActiveLogos(edit).length;
+  const isWatermarked = activeLogoCount > 0;
 
   return {
     isCropped,
     isColorEdited,
     isWatermarked,
+    activeLogoCount,
     hasAnyEdit: isCropped || isColorEdited || isWatermarked,
   };
 }

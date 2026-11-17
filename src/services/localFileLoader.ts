@@ -1,9 +1,14 @@
 import {
   DEFAULT_EDIT_CONFIG,
-  DriveFolder,
-  DriveMediaItem,
-  LogoConfig,
-} from '../types/media';
+  cloneLogoLayers,
+  type DriveFolder,
+  type DriveMediaItem,
+  type LogoLayer,
+} from '../types/media.ts';
+import {
+  sanitizeFileToken,
+  sanitizeFolderNameForDisk,
+} from '../utils/mediaMath.ts';
 
 export interface LocalImportResult {
   folders: DriveFolder[];
@@ -34,8 +39,27 @@ function detectMediaTypeFromFile(file: File): 'image' | 'video' | null {
 }
 
 /**
- * Recursively extracts all File objects from Drag & Drop DataTransferItemList
- * (supports dragging and dropping both bulk image selections AND entire folders from Windows Explorer / macOS Finder)
+ * Revokes all local `blob:` ObjectURLs owned by media items so browser RAM is freed immediately.
+ */
+export function revokeMediaObjectUrls(items: DriveMediaItem[]): void {
+  const revoked = new Set<string>();
+  for (const item of items) {
+    for (const url of [item.gridThumbUrl, item.previewUrl, item.downloadUrl]) {
+      if (url && url.startsWith('blob:') && !revoked.has(url)) {
+        revoked.add(url);
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Recursively extracts all File objects from Drag & Drop DataTransferItemList,
+ * preserving multi-level folder hierarchies.
  */
 export async function extractFilesFromDataTransfer(
   dataTransfer: DataTransfer
@@ -115,15 +139,132 @@ export async function extractFilesFromDataTransfer(
 }
 
 /**
- * Instant Zero-Blocking Bulk Photo & Folder Importer:
- * Converts hundreds or thousands of File objects from the user's computer into
- * DriveFolder[] and DriveMediaItem[] in milliseconds using ObjectURLs without
- * decoding full-resolution bitmaps upfront.
- * Dimensions are automatically updated lazily as thumbnails render or during Canvas export.
+ * Extracts multi-level relative folder path from `webkitRelativePath` without flattening nested dirs
+ * or colliding accented Vietnamese folder names.
+ */
+export function resolveRelativeFolderPath(relPath?: string): {
+  folderId: string;
+  folderName: string;
+} {
+  if (!relPath || !relPath.includes('/')) {
+    return {
+      folderId: 'local_folder_anh_tai_tu_may_tinh',
+      folderName: 'Ảnh tải từ máy tính',
+    };
+  }
+
+  const segments = relPath.split('/').filter(Boolean);
+  // Drop trailing filename; if >=3 segments (Root/Sub1/File), drop top root only when subfolders exist
+  const dirSegments = segments.slice(0, -1);
+  const meaningfulDirs =
+    dirSegments.length >= 2 ? dirSegments.slice(1) : dirSegments;
+  const folderName = sanitizeFolderNameForDisk(meaningfulDirs.join('/'));
+  const token =
+    meaningfulDirs.map((s) => sanitizeFileToken(s) || 'dir').join('__') ||
+    'default';
+
+  return {
+    folderId: `local_folder_${token.toLowerCase()}`,
+    folderName,
+  };
+}
+
+/**
+ * Generates compact 480px JPEG thumbnails asynchronously in background batches
+ * so scrolling 1,000 local 24MP photos uses ~25MB GPU RAM instead of 3GB+.
+ */
+export function generateCompactThumbnailsInBackground(
+  items: DriveMediaItem[],
+  onBatchReady: (
+    updates: Array<{
+      id: string;
+      thumbUrl: string;
+      width: number;
+      height: number;
+    }>
+  ) => void
+): () => void {
+  if (
+    typeof createImageBitmap !== 'function' ||
+    typeof OffscreenCanvas === 'undefined'
+  ) {
+    return () => {};
+  }
+
+  let cancelled = false;
+  const targets = items.filter(
+    (i) => i.mediaType === 'image' && i.rawFile && !i.rawFile.type.includes('svg')
+  );
+
+  (async () => {
+    const BATCH_SIZE = 12;
+    for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+      if (cancelled) return;
+      const slice = targets.slice(i, i + BATCH_SIZE);
+      const batchUpdates: Array<{
+        id: string;
+        thumbUrl: string;
+        width: number;
+        height: number;
+      }> = [];
+
+      await Promise.all(
+        slice.map(async (item) => {
+          if (cancelled || !item.rawFile) return;
+          try {
+            // Decode once to inspect true natural dimensions, then draw downscaled to 480px
+            const fullBmp = await createImageBitmap(item.rawFile);
+            const natW = fullBmp.width;
+            const natH = fullBmp.height;
+            const scale = Math.min(1, 480 / Math.max(natW, natH));
+            const tw = Math.max(1, Math.round(natW * scale));
+            const th = Math.max(1, Math.round(natH * scale));
+
+            const canvas = new OffscreenCanvas(tw, th);
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(fullBmp, 0, 0, tw, th);
+              fullBmp.close();
+              const thumbBlob = await canvas.convertToBlob({
+                type: 'image/jpeg',
+                quality: 0.8,
+              });
+              if (!cancelled) {
+                batchUpdates.push({
+                  id: item.id,
+                  thumbUrl: URL.createObjectURL(thumbBlob),
+                  width: natW,
+                  height: natH,
+                });
+              }
+            } else {
+              fullBmp.close();
+            }
+          } catch {
+            // Keep original ObjectURL if browser cannot decode format via ImageBitmap
+          }
+        })
+      );
+
+      if (!cancelled && batchUpdates.length > 0) {
+        onBatchReady(batchUpdates);
+      }
+      // Yield to main thread frame budget
+      await new Promise((r) => setTimeout(r, 16));
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}
+
+/**
+ * Instant Zero-Blocking Bulk Photo & Folder Importer
  */
 export async function importFilesFromComputer(
   fileList: FileList | File[],
-  existingGlobalLogo?: LogoConfig,
+  existingGlobalLogos: LogoLayer[] = [],
   onProgress?: (msg: string) => void
 ): Promise<LocalImportResult> {
   const rawArray = Array.from(fileList);
@@ -152,20 +293,8 @@ export async function importFilesFromComputer(
     const { file, mediaType } = validEntries[i];
     const isVideo = mediaType === 'video';
     const objectUrl = URL.createObjectURL(file);
-
-    // Determine subfolder name from webkitRelativePath if available
     const relPath = (file as any).webkitRelativePath as string | undefined;
-    let folderName = 'Ảnh tải từ máy tính';
-    if (relPath && relPath.includes('/')) {
-      const segments = relPath.split('/').filter(Boolean);
-      if (segments.length >= 2) {
-        folderName = segments[segments.length - 2];
-      }
-    }
-
-    const folderId = `local_folder_${folderName
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, '_')}`;
+    const { folderId, folderName } = resolveRelativeFolderPath(relPath);
 
     if (!folderMap.has(folderId)) {
       folderMap.set(folderId, {
@@ -187,11 +316,12 @@ export async function importFilesFromComputer(
       width: isVideo ? 1920 : 1800,
       height: isVideo ? 1080 : 1200,
       status: 'kept',
+      rating: 0,
+      isLocal: true,
+      rawFile: file,
       edit: {
         ...DEFAULT_EDIT_CONFIG,
-        logo: existingGlobalLogo
-          ? { ...existingGlobalLogo }
-          : { ...DEFAULT_EDIT_CONFIG.logo },
+        logos: isVideo ? [] : cloneLogoLayers(existingGlobalLogos),
       },
     });
   }

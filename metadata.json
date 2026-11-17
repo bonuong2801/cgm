@@ -1,6 +1,6 @@
 {
-  "name": "CGM - Quản lý, Lọc & Chỉnh sửa Ảnh Google Drive",
-  "description": "Ứng dụng quản lý, chọn lọc (culling), chỉnh sửa màu sắc, cắt ảnh, đóng dấu logo thông minh và xuất hàng loạt ảnh & video từ thư mục Google Drive tốc độ cao.",
+  "name": "CGM Studio — Quản lý, Lọc & Ghép Đa Logo Ảnh Sự Kiện",
+  "description": "Ứng dụng quản lý, chọn lọc (culling), chỉnh sửa màu sắc tự nhiên, cắt ảnh, ghép nhiều lớp Logo thông minh và xuất hàng loạt ảnh & video tốc độ cao từ Google Drive hoặc máy tính.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

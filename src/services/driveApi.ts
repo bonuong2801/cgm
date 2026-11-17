@@ -2,7 +2,9 @@ import {
   DEFAULT_EDIT_CONFIG,
   DriveFolder,
   DriveMediaItem,
-} from '../types/media';
+  LogoLayer,
+  cloneLogoLayers,
+} from '../types/media.ts';
 
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -12,10 +14,7 @@ interface RawDriveFile {
   name: string;
   mimeType: string;
   thumbnailLink?: string;
-  imageMediaMetadata?: {
-    width?: number;
-    height?: number;
-  };
+  imageMediaMetadata?: { width?: number; height?: number };
   videoMediaMetadata?: {
     width?: number;
     height?: number;
@@ -24,60 +23,46 @@ interface RawDriveFile {
 }
 
 /**
- * Extracts a Google Drive Folder or File ID using regex /[-\w]{25,}/
- * Supports URLs like:
- * - https://drive.google.com/drive/folders/1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p?usp=sharing
- * - https://drive.google.com/drive/u/0/folders/1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p
- * - Or direct folder ID string
+ * Extracts a Google Drive Folder ID from any standard share URL or ID string.
  */
 export function extractDriveFolderId(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  const folderPathMatch = trimmed.match(/\/folders\/([-\w]{25,})/);
-  if (folderPathMatch && folderPathMatch[1]) {
-    return folderPathMatch[1];
-  }
+  const folderPathMatch = trimmed.match(/\/folders\/([-\w]{15,})/);
+  if (folderPathMatch?.[1]) return folderPathMatch[1];
 
-  const idParamMatch = trimmed.match(/[?&]id=([-\w]{25,})/);
-  if (idParamMatch && idParamMatch[1]) {
-    return idParamMatch[1];
-  }
+  const idParamMatch = trimmed.match(/[?&]id=([-\w]{15,})/);
+  if (idParamMatch?.[1]) return idParamMatch[1];
 
-  const genericMatch = trimmed.match(/[-\w]{25,}/);
+  const genericMatch = trimmed.match(/^[-\w]{15,}$/);
   return genericMatch ? genericMatch[0] : null;
 }
 
-/**
- * Optimizes Google Drive thumbnailLink resolution:
- * - gridThumbUrl: =s400 for 60fps virtualized grid
- * - previewUrl: =s1600 for crisp Lightbox & Crop modal
- */
 export function buildOptimizedThumbnailUrls(
   fileId: string,
   thumbnailLink?: string
 ): { gridThumbUrl: string; previewUrl: string } {
   if (thumbnailLink) {
-    const hasSizeSuffix = /=s\d+/.test(thumbnailLink);
-    if (hasSizeSuffix) {
+    if (/=s\d+/.test(thumbnailLink)) {
       return {
-        gridThumbUrl: thumbnailLink.replace(/=s\d+.*$/, '=s400'),
+        gridThumbUrl: thumbnailLink.replace(/=s\d+.*$/, '=s480'),
         previewUrl: thumbnailLink.replace(/=s\d+.*$/, '=s2400'),
       };
     }
     return {
-      gridThumbUrl: `${thumbnailLink}=s400`,
+      gridThumbUrl: `${thumbnailLink}=s480`,
       previewUrl: `${thumbnailLink}=s2400`,
     };
   }
 
   return {
-    gridThumbUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`,
+    gridThumbUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w480`,
     previewUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w2400`,
   };
 }
 
-export function getGoogleDriveApiKey(): string {
+function getFallbackClientDriveApiKey(): string {
   const envKey = import.meta.env.VITE_GOOGLE_API_KEY;
   if (
     envKey &&
@@ -90,117 +75,43 @@ export function getGoogleDriveApiKey(): string {
   return '';
 }
 
-async function fetchFolderChildren(
+async function fetchAllFolderChildrenDirect(
   parentId: string,
   apiKey: string
 ): Promise<RawDriveFile[]> {
-  const query = `'${parentId}' in parents and trashed = false`;
-  const fields =
-    'files(id,name,mimeType,thumbnailLink,imageMediaMetadata(width,height),videoMediaMetadata(width,height,durationMillis))';
+  const all: RawDriveFile[] = [];
+  let pageToken: string | undefined;
 
-  const params = new URLSearchParams({
-    q: query,
-    pageSize: '1000',
-    orderBy: 'name',
-    fields,
-    includeItemsFromAllDrives: 'true',
-    supportsAllDrives: 'true',
-    key: apiKey,
-  });
+  do {
+    const params = new URLSearchParams({
+      q: `'${parentId}' in parents and trashed = false`,
+      pageSize: '1000',
+      orderBy: 'name',
+      fields:
+        'nextPageToken,files(id,name,mimeType,thumbnailLink,imageMediaMetadata(width,height),videoMediaMetadata(width,height,durationMillis))',
+      includeItemsFromAllDrives: 'true',
+      supportsAllDrives: 'true',
+      key: apiKey,
+    });
+    if (pageToken) params.set('pageToken', pageToken);
 
-  const response = await fetch(`${DRIVE_API_BASE}?${params.toString()}`);
-
-  if (!response.ok) {
-    let errorDetail = '';
-    try {
-      const errJson = await response.json();
-      errorDetail = errJson?.error?.message || '';
-    } catch {
-      // ignore json parse error
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      if (errorDetail.toLowerCase().includes('quota')) {
-        throw new Error(
-          'Đã vượt quá giới hạn truy cập (Quota) của Google Drive API. Vui lòng thử lại sau ít phút.'
-        );
-      }
+    const response = await fetch(`${DRIVE_API_BASE}?${params.toString()}`);
+    if (!response.ok) {
       throw new Error(
-        "Không thể truy cập thư mục. Vui lòng kiểm tra quyền chia sẻ: Thư mục chưa bật quyền chia sẻ công khai 'Bất kỳ ai có đường liên kết đều có thể xem' hoặc khóa VITE_GOOGLE_API_KEY chưa hợp lệ."
+        response.status === 404
+          ? "Không tìm thấy thư mục Google Drive hoặc thư mục chưa bật 'Bất kỳ ai có đường liên kết đều có thể xem'."
+          : `Lỗi Google Drive API (HTTP ${response.status}).`
       );
     }
+    const data = (await response.json()) as {
+      nextPageToken?: string;
+      files?: RawDriveFile[];
+    };
+    if (data.files) all.push(...data.files);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
 
-    if (response.status === 404) {
-      throw new Error(
-        "Không tìm thấy thư mục Google Drive. Đường dẫn không tồn tại hoặc thư mục chưa bật quyền chia sẻ công khai 'Bất kỳ ai có đường liên kết đều có thể xem'."
-      );
-    }
-
-    throw new Error(
-      `Lỗi kết nối Google Drive API (Mã ${response.status}): ${
-        errorDetail || 'Vui lòng kiểm tra lại đường dẫn thư mục.'
-      }`
-    );
-  }
-
-  const data = (await response.json()) as { files?: RawDriveFile[] };
-  return data.files || [];
-}
-
-function mapRawFileToMediaItem(
-  raw: RawDriveFile,
-  folderId: string,
-  folderName: string,
-  apiKey: string
-): DriveMediaItem | null {
-  const isImage = raw.mimeType.startsWith('image/');
-  const isVideo = raw.mimeType.startsWith('video/');
-
-  if (!isImage && !isVideo) {
-    return null;
-  }
-
-  const { gridThumbUrl, previewUrl } = buildOptimizedThumbnailUrls(
-    raw.id,
-    raw.thumbnailLink
-  );
-
-  const width =
-    raw.imageMediaMetadata?.width ||
-    raw.videoMediaMetadata?.width ||
-    1600;
-  const height =
-    raw.imageMediaMetadata?.height ||
-    raw.videoMediaMetadata?.height ||
-    1067;
-
-  const durationRaw = raw.videoMediaMetadata?.durationMillis;
-  const durationMillis =
-    durationRaw !== undefined ? Number(durationRaw) : undefined;
-
-  const downloadUrl = `${DRIVE_API_BASE}/${raw.id}?alt=media&key=${encodeURIComponent(
-    apiKey
-  )}`;
-
-  return {
-    id: raw.id,
-    name: raw.name,
-    folderId,
-    folderName,
-    mimeType: raw.mimeType,
-    mediaType: isVideo ? 'video' : 'image',
-    gridThumbUrl,
-    previewUrl,
-    downloadUrl,
-    width,
-    height,
-    durationMillis,
-    status: 'kept',
-    edit: {
-      ...DEFAULT_EDIT_CONFIG,
-      logo: { ...DEFAULT_EDIT_CONFIG.logo },
-    },
-  };
+  return all;
 }
 
 export interface CrawlDriveResult {
@@ -210,12 +121,13 @@ export interface CrawlDriveResult {
 }
 
 /**
- * 2-Step Parallel Crawler for Google Drive Folders:
- * Step 1: Fetch immediate children of rootFolderId (subfolders + any root media files).
- * Step 2: Concurrently fetch all media inside all subfolders using Promise.all.
+ * Primary path: Securely crawls via `/api/drive/crawl` (server-side hidden GOOGLE_API_KEY,
+ * full nextPageToken pagination, recursive multi-level folder crawl, stream proxy URLs).
+ * Fallback path: Direct paginated recursive crawl if running static-only with VITE_GOOGLE_API_KEY.
  */
 export async function crawlGoogleDriveFolder(
   urlOrId: string,
+  initialLogos: LogoLayer[] = [],
   onStatusUpdate?: (message: string) => void
 ): Promise<CrawlDriveResult> {
   const rootFolderId = extractDriveFolderId(urlOrId);
@@ -225,85 +137,148 @@ export async function crawlGoogleDriveFolder(
     );
   }
 
-  const apiKey = getGoogleDriveApiKey();
-  if (!apiKey) {
-    throw new Error(
-      'Chưa cấu hình biến môi trường VITE_GOOGLE_API_KEY. Vui lòng thêm VITE_GOOGLE_API_KEY vào phần Environment Variables trên Vercel hoặc file .env.'
+  onStatusUpdate?.(
+    'Đang quét đệ quy toàn bộ cấu trúc thư mục & phân trang từ Google Drive...'
+  );
+
+  try {
+    const res = await fetch(
+      `/api/drive/crawl?folderId=${encodeURIComponent(rootFolderId)}`
     );
-  }
+    const contentType = res.headers.get('content-type') || '';
 
-  onStatusUpdate?.('Đang quét cấu trúc thư mục gốc từ Google Drive...');
-  const rootChildren = await fetchFolderChildren(rootFolderId, apiKey);
+    if (contentType.includes('application/json')) {
+      const payload = await res.json();
+      if (res.ok && payload?.items) {
+        const items: DriveMediaItem[] = payload.items.map((dto: any) => ({
+          ...dto,
+          status: 'kept',
+          rating: 0,
+          edit: {
+            ...DEFAULT_EDIT_CONFIG,
+            logos:
+              dto.mediaType === 'image' ? cloneLogoLayers(initialLogos) : [],
+          },
+        }));
+        return {
+          rootFolderId: payload.rootFolderId,
+          folders: payload.folders,
+          items,
+        };
+      }
 
-  const subFoldersRaw = rootChildren.filter(
-    (f) => f.mimeType === FOLDER_MIME
-  );
-  const rootMediaRaw = rootChildren.filter(
-    (f) => f.mimeType.startsWith('image/') || f.mimeType.startsWith('video/')
-  );
-
-  const folders: DriveFolder[] = [];
-  const allItems: DriveMediaItem[] = [];
-
-  if (rootMediaRaw.length > 0) {
-    const rootFolderEntry: DriveFolder = {
-      id: rootFolderId,
-      name: 'Thư mục gốc',
-      isRoot: true,
-    };
-    folders.push(rootFolderEntry);
-
-    for (const raw of rootMediaRaw) {
-      const mapped = mapRawFileToMediaItem(
-        raw,
-        rootFolderEntry.id,
-        rootFolderEntry.name,
-        apiKey
-      );
-      if (mapped) allItems.push(mapped);
+      // Only fall back to client key if server specifically lacks GOOGLE_API_KEY
+      if (payload?.code !== 'MISSING_API_KEY') {
+        throw new Error(
+          payload?.error || 'Không thể tải dữ liệu từ Google Drive.'
+        );
+      }
+    }
+  } catch (err: any) {
+    // Re-throw real Drive errors from /api
+    if (
+      err?.message &&
+      !err.message.includes('Failed to fetch') &&
+      !err.message.includes('NetworkError')
+    ) {
+      throw err;
     }
   }
 
-  if (subFoldersRaw.length > 0) {
-    onStatusUpdate?.(
-      `Đang tải song song ${subFoldersRaw.length} thư mục con với tốc độ cao...`
+  // Static-only fallback if VITE_GOOGLE_API_KEY is present in client build
+  const fallbackKey = getFallbackClientDriveApiKey();
+  if (!fallbackKey) {
+    throw new Error(
+      'Chưa cấu hình khóa GOOGLE_API_KEY trên Server (file .env hoặc Vercel Environment Variables).'
     );
+  }
 
-    const subFolderResults = await Promise.all(
-      subFoldersRaw.map(async (sub) => {
-        const children = await fetchFolderChildren(sub.id, apiKey);
-        return {
-          folder: { id: sub.id, name: sub.name } as DriveFolder,
-          children,
-        };
-      })
+  const folders: DriveFolder[] = [];
+  const items: DriveMediaItem[] = [];
+  let queue: Array<{ id: string; name: string; depth: number; isRoot: boolean }> =
+    [{ id: rootFolderId, name: 'Thư mục gốc', depth: 0, isRoot: true }];
+
+  while (queue.length > 0) {
+    const nextQueue: typeof queue = [];
+    const batchResults = await Promise.all(
+      queue.slice(0, 5).map(async (node) => ({
+        node,
+        children: await fetchAllFolderChildrenDirect(node.id, fallbackKey),
+      }))
     );
+    queue = queue.slice(5);
 
-    for (const result of subFolderResults) {
-      folders.push(result.folder);
-      for (const raw of result.children) {
-        const mapped = mapRawFileToMediaItem(
-          raw,
-          result.folder.id,
-          result.folder.name,
-          apiKey
-        );
-        if (mapped) {
-          allItems.push(mapped);
+    for (const { node, children } of batchResults) {
+      const mediaRaw = children.filter(
+        (f) => f.mimeType.startsWith('image/') || f.mimeType.startsWith('video/')
+      );
+      const subFolders = children.filter((f) => f.mimeType === FOLDER_MIME);
+
+      if (mediaRaw.length > 0) {
+        folders.push({
+          id: node.id,
+          name: node.name,
+          isRoot: node.isRoot || undefined,
+        });
+        for (const raw of mediaRaw) {
+          const isVideo = raw.mimeType.startsWith('video/');
+          const { gridThumbUrl, previewUrl } = buildOptimizedThumbnailUrls(
+            raw.id,
+            raw.thumbnailLink
+          );
+          items.push({
+            id: raw.id,
+            name: raw.name,
+            folderId: node.id,
+            folderName: node.name,
+            mimeType: raw.mimeType,
+            mediaType: isVideo ? 'video' : 'image',
+            gridThumbUrl,
+            previewUrl,
+            downloadUrl: `${DRIVE_API_BASE}/${raw.id}?alt=media&acknowledgeAbuse=true&key=${encodeURIComponent(
+              fallbackKey
+            )}`,
+            width:
+              raw.imageMediaMetadata?.width ||
+              raw.videoMediaMetadata?.width ||
+              1600,
+            height:
+              raw.imageMediaMetadata?.height ||
+              raw.videoMediaMetadata?.height ||
+              1067,
+            durationMillis:
+              raw.videoMediaMetadata?.durationMillis !== undefined
+                ? Number(raw.videoMediaMetadata.durationMillis)
+                : undefined,
+            status: 'kept',
+            rating: 0,
+            edit: {
+              ...DEFAULT_EDIT_CONFIG,
+              logos: isVideo ? [] : cloneLogoLayers(initialLogos),
+            },
+          });
+        }
+      }
+
+      if (node.depth < 5) {
+        for (const sub of subFolders) {
+          nextQueue.push({
+            id: sub.id,
+            name: node.isRoot ? sub.name : `${node.name}/${sub.name}`,
+            depth: node.depth + 1,
+            isRoot: false,
+          });
         }
       }
     }
+    queue.push(...nextQueue);
   }
 
-  if (folders.length === 0 || allItems.length === 0) {
+  if (items.length === 0) {
     throw new Error(
-      "Không tìm thấy file Ảnh hoặc Video nào trong thư mục này. Hãy đảm bảo thư mục có chứa ảnh/video và đã bật chế độ 'Bất kỳ ai có đường liên kết đều có thể xem'."
+      "Không tìm thấy file Ảnh hoặc Video nào trong thư mục này. Hãy kiểm tra quyền chia sẻ 'Bất kỳ ai có đường liên kết đều có thể xem'."
     );
   }
 
-  return {
-    rootFolderId,
-    folders,
-    items: allItems,
-  };
+  return { rootFolderId, folders, items };
 }

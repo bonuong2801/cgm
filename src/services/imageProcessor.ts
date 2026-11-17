@@ -1,15 +1,24 @@
 import {
-  DriveMediaItem,
-  EditConfig,
-  ImageExportFormat,
-  LogoConfig,
-} from '../types/media';
+  getActiveLogos,
+  type DriveMediaItem,
+  type ExportMaxDimension,
+  type ImageExportFormat,
+} from '../types/media.ts';
+import {
+  buildCssFilterString,
+  computeFrameGeometry,
+  computeSmartLogoPlacement,
+  computeWarmthTint,
+} from '../utils/mediaMath.ts';
+import type {
+  WorkerRenderRequest,
+  WorkerRenderResponse,
+} from '../workers/exportWorker.ts';
+
+export { buildCssFilterString, computeSmartLogoPlacement };
 
 const logoImageCache = new Map<string, HTMLImageElement>();
 
-/**
- * Loads an HTMLImageElement from an ObjectURL or DataURL safely
- */
 export function loadImageElement(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -19,6 +28,53 @@ export function loadImageElement(src: string): Promise<HTMLImageElement> {
       reject(new Error('Không thể giải mã dữ liệu hình ảnh.'));
     img.src = src;
   });
+}
+
+/**
+ * Reads an uploaded Logo file (PNG, WebP, JPG, or SVG) and normalizes SVGs into
+ * a crisp high-res PNG DataURL so both DOM and Worker OffscreenCanvas decode it reliably.
+ */
+export async function readLogoFileToDataUrl(file: File): Promise<{
+  dataUrl: string;
+  naturalWidth: number;
+  naturalHeight: number;
+}> {
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Không thể đọc tệp Logo.'));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await loadImageElement(rawDataUrl);
+  const natW = img.naturalWidth || 600;
+  const natH = img.naturalHeight || 200;
+
+  // Rasterize SVG once to transparent high-res PNG so Web Worker createImageBitmap succeeds 100%
+  if (
+    file.type === 'image/svg+xml' ||
+    rawDataUrl.startsWith('data:image/svg+xml')
+  ) {
+    const targetW = Math.min(2048, Math.max(800, natW * 2));
+    const targetH = Math.max(1, Math.round(targetW * (natH / Math.max(1, natW))));
+    const c = document.createElement('canvas');
+    c.width = targetW;
+    c.height = targetH;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+      const pngDataUrl = c.toDataURL('image/png');
+      c.width = 0;
+      c.height = 0;
+      return {
+        dataUrl: pngDataUrl,
+        naturalWidth: targetW,
+        naturalHeight: targetH,
+      };
+    }
+  }
+
+  return { dataUrl: rawDataUrl, naturalWidth: natW, naturalHeight: natH };
 }
 
 async function getCachedLogoImage(dataUrl: string): Promise<HTMLImageElement> {
@@ -31,173 +87,116 @@ async function getCachedLogoImage(dataUrl: string): Promise<HTMLImageElement> {
   return img;
 }
 
-/**
- * Builds CSS filter string for both live DOM preview and Canvas 2D context
- */
-export function buildCssFilterString(edit: EditConfig): string {
-  const parts: string[] = [];
-  if (edit.brightness !== 100) {
-    parts.push(`brightness(${edit.brightness}%)`);
-  }
-  if (edit.contrast !== 100) {
-    parts.push(`contrast(${edit.contrast}%)`);
-  }
-  if (edit.saturation !== 100) {
-    parts.push(`saturate(${edit.saturation}%)`);
-  }
-  if (edit.warmth > 0) {
-    parts.push(`sepia(${edit.warmth}%)`);
-  }
-  return parts.length > 0 ? parts.join(' ') : 'none';
+// Lazy 4-Worker Pool for background OffscreenCanvas rendering
+interface PoolSlot {
+  worker: Worker;
+  busy: boolean;
 }
 
-/**
- * Calculates Logo placement and dimensions using the Mandatory Proportional Sizing Formula:
- * Logo width is calculated relative to the SHORTER EDGE of the final cropped photo:
- * shortSide = Math.min(finalWidth, finalHeight)
- * so watermarks maintain identical visual weight across both landscape and portrait photos.
- */
-export function computeSmartLogoPlacement(
-  finalWidth: number,
-  finalHeight: number,
-  logo: LogoConfig
-): { x: number; y: number; width: number; height: number } {
-  const shortSide = Math.min(finalWidth, finalHeight);
-  const logoAspect =
-    logo.naturalWidth > 0 && logo.naturalHeight > 0
-      ? logo.naturalWidth / logo.naturalHeight
-      : 2.5;
-
-  const targetLogoWidth = Math.max(12, (shortSide * logo.scalePercent) / 100);
-  const targetLogoHeight = targetLogoWidth / logoAspect;
-  const marginPx = (shortSide * logo.marginPercent) / 100;
-
-  let x = marginPx;
-  let y = marginPx;
-
-  switch (logo.position) {
-    case 'top-left':
-      x = marginPx;
-      y = marginPx;
-      break;
-    case 'top-right':
-      x = finalWidth - targetLogoWidth - marginPx;
-      y = marginPx;
-      break;
-    case 'bottom-left':
-      x = marginPx;
-      y = finalHeight - targetLogoHeight - marginPx;
-      break;
-    case 'bottom-right':
-      x = finalWidth - targetLogoWidth - marginPx;
-      y = finalHeight - targetLogoHeight - marginPx;
-      break;
-    case 'center':
-      x = (finalWidth - targetLogoWidth) / 2;
-      y = (finalHeight - targetLogoHeight) / 2;
-      break;
+let workerPool: PoolSlot[] | null = null;
+let workerSupported: boolean | null = null;
+let nextJobId = 1;
+const pendingJobs = new Map<
+  number,
+  {
+    resolve: (blob: Blob) => void;
+    reject: (err: Error) => void;
+    slot: PoolSlot;
   }
+>();
+const waitQueue: Array<(slot: PoolSlot) => void> = [];
 
-  return {
-    x: Math.round(x),
-    y: Math.round(y),
-    width: Math.round(targetLogoWidth),
-    height: Math.round(targetLogoHeight),
-  };
-}
+function ensureWorkerPool(size = 4): PoolSlot[] | null {
+  if (workerSupported === false) return null;
+  if (workerPool) return workerPool;
 
-/**
- * Fetches raw image binary as a Blob and creates a local ObjectURL
- * to prevent CORS Tainted Canvas errors. Falls back to previewUrl if needed.
- */
-async function fetchImageAsObjectUrl(
-  item: DriveMediaItem,
-  signal?: AbortSignal
-): Promise<{ objectUrl: string; revokeAfterUse: boolean }> {
   if (
-    item.downloadUrl.startsWith('data:') ||
-    item.downloadUrl.startsWith('blob:')
+    typeof Worker === 'undefined' ||
+    typeof OffscreenCanvas === 'undefined'
   ) {
-    return { objectUrl: item.downloadUrl, revokeAfterUse: false };
+    workerSupported = false;
+    return null;
   }
 
   try {
-    const response = await fetch(item.downloadUrl, { signal });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const blob = await response.blob();
-    return {
-      objectUrl: URL.createObjectURL(blob),
-      revokeAfterUse: true,
-    };
-  } catch (err) {
-    if (signal?.aborted) throw err;
-    // Fallback to fetching previewUrl as blob
-    const fallbackRes = await fetch(item.previewUrl, { signal });
-    if (!fallbackRes.ok) {
-      throw new Error(
-        `Không thể tải dữ liệu ảnh gốc từ Google Drive (Mã lỗi ${fallbackRes.status}).`
+    const slots: PoolSlot[] = [];
+    for (let i = 0; i < size; i++) {
+      const w = new Worker(
+        new URL('../workers/exportWorker.ts', import.meta.url),
+        { type: 'module' }
       );
+      const slot: PoolSlot = { worker: w, busy: false };
+      w.onmessage = (ev: MessageEvent<WorkerRenderResponse>) => {
+        const res = ev.data;
+        const entry = pendingJobs.get(res.jobId);
+        if (!entry) return;
+        pendingJobs.delete(res.jobId);
+
+        const nextWaiter = waitQueue.shift();
+        if (nextWaiter) {
+          nextWaiter(entry.slot);
+        } else {
+          entry.slot.busy = false;
+        }
+
+        if (res.ok && res.blob) {
+          entry.resolve(res.blob);
+        } else {
+          entry.reject(new Error(res.error || 'Lỗi xuất ảnh trong Worker.'));
+        }
+      };
+      w.onerror = () => {
+        workerSupported = false;
+      };
+      slots.push(slot);
     }
-    const blob = await fallbackRes.blob();
-    return {
-      objectUrl: URL.createObjectURL(blob),
-      revokeAfterUse: true,
-    };
+    workerSupported = true;
+    workerPool = slots;
+    return slots;
+  } catch {
+    workerSupported = false;
+    return null;
   }
 }
 
-/**
- * Rotates an image onto an intermediate canvas so crop coordinates align cleanly
- */
-function renderRotatedSourceCanvas(
-  img: HTMLImageElement,
-  rotation: 0 | 90 | 180 | 270
-): HTMLCanvasElement {
-  const srcW = img.naturalWidth || img.width;
-  const srcH = img.naturalHeight || img.height;
-
-  const isPerpendicular = rotation === 90 || rotation === 270;
-  const rotatedW = isPerpendicular ? srcH : srcW;
-  const rotatedH = isPerpendicular ? srcW : srcH;
-
-  const rotCanvas = document.createElement('canvas');
-  rotCanvas.width = rotatedW;
-  rotCanvas.height = rotatedH;
-
-  const rCtx = rotCanvas.getContext('2d');
-  if (!rCtx) {
-    throw new Error('Không thể khởi tạo bộ xử lý đồ họa Canvas 2D.');
+function acquireWorkerSlot(pool: PoolSlot[]): Promise<PoolSlot> {
+  const free = pool.find((s) => !s.busy);
+  if (free) {
+    free.busy = true;
+    return Promise.resolve(free);
   }
-
-  rCtx.save();
-  rCtx.translate(rotatedW / 2, rotatedH / 2);
-  rCtx.rotate((rotation * Math.PI) / 180);
-  rCtx.drawImage(img, -srcW / 2, -srcH / 2, srcW, srcH);
-  rCtx.restore();
-
-  return rotCanvas;
+  return new Promise((resolve) => {
+    waitQueue.push(resolve);
+  });
 }
 
-/**
- * Mandatory Canvas Pipeline for Photos:
- * 1. Fetch raw image binary as a Blob and create a local ObjectURL to prevent CORS Tainted Canvas errors.
- * 2. Apply rotation and extract croppedAreaPixels / cropPercent onto an offscreen <canvas> sized to (finalWidth, finalHeight).
- * 3. Apply ctx.filter (brightness, contrast, saturation, sepia) and draw the photo.
- * 4. MANDATORY: Reset ctx.filter = 'none' before drawing the Logo so image color filters never distort the logo's true colors.
- * 5. Draw the Logo with ctx.globalAlpha = opacity, export via canvas.toBlob using the selected format/quality, and immediately call URL.revokeObjectURL.
- */
-export async function processPhotoToBlob(
+async function processPhotoMainThreadFallback(
   item: DriveMediaItem,
-  format: ImageExportFormat = 'image/jpeg',
-  quality: number = 0.92,
+  format: ImageExportFormat,
+  quality: number,
+  maxDimension: ExportMaxDimension,
   signal?: AbortSignal
 ): Promise<Blob> {
-  const { objectUrl, revokeAfterUse } = await fetchImageAsObjectUrl(
-    item,
-    signal
-  );
+  let objectUrl = item.downloadUrl;
+  let revokeAfterUse = false;
+
+  if (item.rawFile) {
+    objectUrl = URL.createObjectURL(item.rawFile);
+    revokeAfterUse = true;
+  } else if (
+    !item.downloadUrl.startsWith('data:') &&
+    !item.downloadUrl.startsWith('blob:')
+  ) {
+    const response = await fetch(item.downloadUrl, { signal });
+    if (!response.ok) {
+      throw new Error(
+        `Không thể tải dữ liệu ảnh gốc chất lượng cao (Mã HTTP ${response.status}).`
+      );
+    }
+    const blob = await response.blob();
+    objectUrl = URL.createObjectURL(blob);
+    revokeAfterUse = true;
+  }
 
   try {
     const img = await loadImageElement(objectUrl);
@@ -205,121 +204,145 @@ export async function processPhotoToBlob(
       throw new DOMException('Đã hủy xuất file', 'AbortError');
     }
 
-    const edit = item.edit;
-    const rotatedCanvas = renderRotatedSourceCanvas(img, edit.rotation);
-    const rotW = rotatedCanvas.width;
-    const rotH = rotatedCanvas.height;
-
-    let cropX = 0;
-    let cropY = 0;
-    let finalWidth = rotW;
-    let finalHeight = rotH;
-
-    // Prefer resolution-independent cropPercent if available so even if previewUrl was 1600px
-    // and full raw downloadUrl is 4000px, the exact cropped region scales accurately!
-    if (edit.cropPercent) {
-      cropX = Math.round((edit.cropPercent.x / 100) * rotW);
-      cropY = Math.round((edit.cropPercent.y / 100) * rotH);
-      finalWidth = Math.max(
-        1,
-        Math.round((edit.cropPercent.width / 100) * rotW)
-      );
-      finalHeight = Math.max(
-        1,
-        Math.round((edit.cropPercent.height / 100) * rotH)
-      );
-    } else if (edit.croppedAreaPixels) {
-      cropX = Math.max(0, Math.round(edit.croppedAreaPixels.x));
-      cropY = Math.max(0, Math.round(edit.croppedAreaPixels.y));
-      finalWidth = Math.max(
-        1,
-        Math.min(rotW - cropX, Math.round(edit.croppedAreaPixels.width))
-      );
-      finalHeight = Math.max(
-        1,
-        Math.min(rotH - cropY, Math.round(edit.croppedAreaPixels.height))
-      );
-    }
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    const geom = computeFrameGeometry(srcW, srcH, item.edit, maxDimension);
 
     const outCanvas = document.createElement('canvas');
-    outCanvas.width = finalWidth;
-    outCanvas.height = finalHeight;
+    outCanvas.width = geom.outW;
+    outCanvas.height = geom.outH;
 
     const ctx = outCanvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Không thể khởi tạo Canvas xuất ảnh.');
-    }
+    if (!ctx) throw new Error('Không thể khởi tạo Canvas xuất ảnh.');
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // Fill background for JPEG
     if (format === 'image/jpeg') {
       ctx.fillStyle = '#09090b';
-      ctx.fillRect(0, 0, finalWidth, finalHeight);
+      ctx.fillRect(0, 0, geom.outW, geom.outH);
     }
 
-    // Step 3: Apply color adjustments via ctx.filter and draw cropped region
-    ctx.filter = buildCssFilterString(edit);
-    ctx.drawImage(
-      rotatedCanvas,
-      cropX,
-      cropY,
-      finalWidth,
-      finalHeight,
-      0,
-      0,
-      finalWidth,
-      finalHeight
-    );
+    ctx.save();
+    ctx.filter = buildCssFilterString(item.edit);
+    ctx.scale(geom.scale, geom.scale);
+    ctx.translate(geom.rotW / 2 - geom.cropX, geom.rotH / 2 - geom.cropY);
+    if (item.edit.rotation !== 0) {
+      ctx.rotate((item.edit.rotation * Math.PI) / 180);
+    }
+    ctx.drawImage(img, -srcW / 2, -srcH / 2, srcW, srcH);
+    ctx.restore();
 
-    // Step 4: MANDATORY - Reset ctx.filter = 'none' before drawing the Logo
-    // so image color filters never distort the logo's true colors!
-    ctx.filter = 'none';
-
-    // Step 5: Draw Smart Logo Watermark if enabled
-    if (edit.logo.enabled && edit.logo.dataUrl) {
-      const logoImg = await getCachedLogoImage(edit.logo.dataUrl);
-      const placement = computeSmartLogoPlacement(
-        finalWidth,
-        finalHeight,
-        edit.logo
-      );
-
+    const warmthTint = computeWarmthTint(item.edit.warmth);
+    if (warmthTint) {
       ctx.save();
       ctx.filter = 'none';
-      ctx.globalAlpha = Math.max(0.1, Math.min(1, edit.logo.opacity / 100));
-      ctx.drawImage(
-        logoImg,
-        placement.x,
-        placement.y,
-        placement.width,
-        placement.height
-      );
+      ctx.globalCompositeOperation = 'soft-light';
+      ctx.fillStyle = `rgba(${warmthTint.rgb}, ${warmthTint.alpha})`;
+      ctx.fillRect(0, 0, geom.outW, geom.outH);
       ctx.restore();
+    }
+
+    const activeLogos = getActiveLogos(item.edit);
+    if (activeLogos.length > 0) {
+      ctx.filter = 'none';
+      ctx.globalCompositeOperation = 'source-over';
+      for (const layer of activeLogos) {
+        const logoImg = await getCachedLogoImage(layer.dataUrl);
+        const placement = computeSmartLogoPlacement(
+          geom.outW,
+          geom.outH,
+          layer
+        );
+        ctx.save();
+        ctx.globalAlpha = Math.max(0.1, Math.min(1, layer.opacity / 100));
+        ctx.drawImage(
+          logoImg,
+          placement.x,
+          placement.y,
+          placement.width,
+          placement.height
+        );
+        ctx.restore();
+      }
     }
 
     const outputBlob = await new Promise<Blob>((resolve, reject) => {
       outCanvas.toBlob(
-        (blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('Không thể đóng gói file ảnh đầu ra.'));
-        },
+        (b) =>
+          b ? resolve(b) : reject(new Error('Không thể đóng gói file ảnh.')),
         format,
-        quality
+        format === 'image/png' ? undefined : quality
       );
     });
 
-    // Clean up temporary canvas memory
     outCanvas.width = 0;
     outCanvas.height = 0;
-    rotatedCanvas.width = 0;
-    rotatedCanvas.height = 0;
-
     return outputBlob;
   } finally {
-    if (revokeAfterUse) {
-      URL.revokeObjectURL(objectUrl);
+    if (revokeAfterUse) URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
+ * Renders an edited/multi-logo photo into an output Blob using the 4-thread
+ * OffscreenCanvas Worker Pool (keeping UI at 60fps), falling back cleanly if unavailable.
+ */
+export async function processPhotoToBlob(
+  item: DriveMediaItem,
+  format: ImageExportFormat = 'image/jpeg',
+  quality: number = 0.92,
+  maxDimension: ExportMaxDimension = 0,
+  signal?: AbortSignal
+): Promise<Blob> {
+  if (signal?.aborted) {
+    throw new DOMException('Đã hủy xuất file', 'AbortError');
+  }
+
+  const pool = ensureWorkerPool();
+  if (!pool) {
+    return processPhotoMainThreadFallback(
+      item,
+      format,
+      quality,
+      maxDimension,
+      signal
+    );
+  }
+
+  let sourceBlob: Blob | undefined = item.rawFile;
+  let resolvedUrl: string | undefined;
+
+  if (!sourceBlob) {
+    if (item.downloadUrl.startsWith('blob:')) {
+      const r = await fetch(item.downloadUrl, { signal });
+      sourceBlob = await r.blob();
+    } else {
+      resolvedUrl = new URL(item.downloadUrl, window.location.origin).href;
     }
   }
+
+  const slot = await acquireWorkerSlot(pool);
+  if (signal?.aborted) {
+    const nextWaiter = waitQueue.shift();
+    if (nextWaiter) nextWaiter(slot);
+    else slot.busy = false;
+    throw new DOMException('Đã hủy xuất file', 'AbortError');
+  }
+
+  const jobId = nextJobId++;
+  const req: WorkerRenderRequest = {
+    jobId,
+    sourceBlob,
+    downloadUrl: resolvedUrl,
+    edit: item.edit,
+    format,
+    quality,
+    maxDimension,
+  };
+
+  return new Promise<Blob>((resolve, reject) => {
+    pendingJobs.set(jobId, { resolve, reject, slot });
+    slot.worker.postMessage(req);
+  });
 }

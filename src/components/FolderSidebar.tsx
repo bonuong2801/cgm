@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   CheckCircle2,
   Film,
@@ -13,12 +13,12 @@ import {
   DriveFolder,
   DriveMediaItem,
   MediaTypeFilter,
-} from '../types/media';
+} from '../types/media.ts';
 
 interface FolderSidebarProps {
   folders: DriveFolder[];
   items: DriveMediaItem[];
-  selectedFolderId: string; // 'ALL' or folder.id
+  selectedFolderId: string;
   onSelectFolder: (folderId: string) => void;
   mediaTypeFilter: MediaTypeFilter;
   onSelectMediaType: (filter: MediaTypeFilter) => void;
@@ -40,48 +40,64 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
   gridColumns,
   onChangeGridColumns,
 }) => {
-  // Compute aggregate stats
-  const totalKept = items.filter((i) => i.status === 'kept').length;
-  const totalRejected = items.filter((i) => i.status === 'rejected').length;
-  const totalVideos = items.filter((i) => i.mediaType === 'video').length;
+  // Single O(N) pass for all folder & global counts instead of repeated O(F * N) scans
+  const statsSummary = useMemo(() => {
+    let totalKept = 0;
+    let totalRejected = 0;
+    let totalVideos = 0;
+    let scopedKeptCount = 0;
+    let scopedRejectedCount = 0;
 
-  // Per-folder stats
-  const getFolderStats = (folderId: string) => {
-    const folderItems = items.filter((i) => i.folderId === folderId);
-    const kept = folderItems.filter((i) => i.status === 'kept').length;
-    const total = folderItems.length;
-    const videos = folderItems.filter((i) => i.mediaType === 'video').length;
-    return { kept, total, videos };
-  };
+    const perFolder = new Map<
+      string,
+      { kept: number; total: number; videos: number }
+    >();
 
-  // Filtered counts for current folder selection
-  const folderScopedItems =
-    selectedFolderId === 'ALL'
-      ? items
-      : items.filter((i) => i.folderId === selectedFolderId);
+    for (const item of items) {
+      if (item.status === 'kept') totalKept++;
+      else totalRejected++;
+      if (item.mediaType === 'video') totalVideos++;
 
-  const scopedKeptCount = folderScopedItems.filter(
-    (i) =>
-      i.status === 'kept' &&
-      (mediaTypeFilter === 'all' || i.mediaType === mediaTypeFilter)
-  ).length;
+      const entry = perFolder.get(item.folderId) || {
+        kept: 0,
+        total: 0,
+        videos: 0,
+      };
+      entry.total++;
+      if (item.status === 'kept') entry.kept++;
+      if (item.mediaType === 'video') entry.videos++;
+      perFolder.set(item.folderId, entry);
 
-  const scopedRejectedCount = folderScopedItems.filter(
-    (i) =>
-      i.status === 'rejected' &&
-      (mediaTypeFilter === 'all' || i.mediaType === mediaTypeFilter)
-  ).length;
+      const inScopedFolder =
+        selectedFolderId === 'ALL' || item.folderId === selectedFolderId;
+      const inScopedMedia =
+        mediaTypeFilter === 'all' || item.mediaType === mediaTypeFilter;
+      if (inScopedFolder && inScopedMedia) {
+        if (item.status === 'kept') scopedKeptCount++;
+        else scopedRejectedCount++;
+      }
+    }
+
+    return {
+      totalKept,
+      totalRejected,
+      totalVideos,
+      scopedKeptCount,
+      scopedRejectedCount,
+      perFolder,
+    };
+  }, [items, selectedFolderId, mediaTypeFilter]);
 
   return (
-    <aside className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col h-full shrink-0 select-none">
-      {/* Section 1: Culling Status Filter (Đang giữ vs Đã loại bỏ) */}
-      <div className="p-4 border-b border-zinc-800 space-y-3">
+    <aside className="w-68 bg-zinc-900 border-r border-zinc-800 flex flex-col h-full shrink-0 select-none">
+      {/* Section 1: Culling Status Filter */}
+      <div className="p-3.5 border-b border-zinc-800 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-400">
             Trạng thái chọn lọc
           </span>
           <span className="text-xs font-mono tabular-nums text-zinc-500">
-            {totalKept} giữ · {totalRejected} loại
+            {statsSummary.totalKept} giữ · {statsSummary.totalRejected} loại
           </span>
         </div>
 
@@ -89,42 +105,48 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
           <button
             type="button"
             onClick={() => onSelectStatusFilter('kept')}
-            className={`px-2.5 py-2 rounded-md text-xs font-medium transition-colors flex items-center justify-between whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`px-2.5 py-2 rounded-md text-xs font-medium transition-colors flex items-center justify-between whitespace-nowrap cursor-pointer ${
               statusFilter === 'kept'
                 ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                 : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
             }`}
           >
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <CheckCircle2
+                className="w-3.5 h-3.5 text-emerald-400 shrink-0"
+                aria-hidden="true"
+              />
               <span>Đang giữ</span>
             </span>
             <span className="font-mono tabular-nums text-[11px] opacity-85">
-              {scopedKeptCount}
+              {statsSummary.scopedKeptCount}
             </span>
           </button>
 
           <button
             type="button"
             onClick={() => onSelectStatusFilter('rejected')}
-            className={`px-2.5 py-2 rounded-md text-xs font-medium transition-colors flex items-center justify-between whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`px-2.5 py-2 rounded-md text-xs font-medium transition-colors flex items-center justify-between whitespace-nowrap cursor-pointer ${
               statusFilter === 'rejected'
                 ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                 : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
             }`}
           >
             <span className="flex items-center gap-1.5">
-              <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              <span>Đã loại bỏ</span>
+              <Trash2
+                className="w-3.5 h-3.5 text-rose-400 shrink-0"
+                aria-hidden="true"
+              />
+              <span>Đã loại</span>
             </span>
             <span className="font-mono tabular-nums text-[11px] opacity-85">
-              {scopedRejectedCount}
+              {statsSummary.scopedRejectedCount}
             </span>
           </button>
         </div>
 
-        {/* Media Type Filter (Tất cả / Chỉ Ảnh / Chỉ Video) */}
-        <div className="space-y-1.5 pt-1">
+        {/* Media Type Filter */}
+        <div className="space-y-1.5 pt-0.5">
           <span className="text-xs font-semibold text-zinc-400 block">
             Loại phương tiện
           </span>
@@ -132,7 +154,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
             <button
               type="button"
               onClick={() => onSelectMediaType('all')}
-              className={`py-1.5 px-2 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`py-1.5 px-2 rounded text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
                 mediaTypeFilter === 'all'
                   ? 'bg-zinc-800 text-zinc-100 shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -143,47 +165,46 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
             <button
               type="button"
               onClick={() => onSelectMediaType('image')}
-              className={`py-1.5 px-2 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`py-1.5 px-2 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                 mediaTypeFilter === 'image'
                   ? 'bg-zinc-800 text-zinc-100 shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <ImageIcon className="w-3 h-3 shrink-0" />
-              <span>Chỉ Ảnh</span>
+              <ImageIcon className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>Ảnh</span>
             </button>
             <button
               type="button"
               onClick={() => onSelectMediaType('video')}
-              className={`py-1.5 px-2 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`py-1.5 px-2 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                 mediaTypeFilter === 'video'
                   ? 'bg-zinc-800 text-zinc-100 shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <Film className="w-3 h-3 shrink-0" />
-              <span>Chỉ Video</span>
+              <Film className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>Video</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Section 2: Subfolder List (5-8 folders) */}
+      {/* Section 2: Multi-Level Subfolder List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-1">
         <div className="px-2 pb-1.5 flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-400">
-            Danh sách thư mục ({folders.length})
+            Thư mục ({folders.length})
           </span>
           <span className="text-[11px] font-mono tabular-nums text-zinc-500">
             Giữ / Tổng
           </span>
         </div>
 
-        {/* All Folders Item */}
         <button
           type="button"
           onClick={() => onSelectFolder('ALL')}
-          className={`w-full px-3 py-2.5 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
+          className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
             selectedFolderId === 'ALL'
               ? 'bg-indigo-500/15 text-indigo-200 border border-indigo-500/30'
               : 'text-zinc-300 hover:bg-zinc-800/60 border border-transparent'
@@ -194,24 +215,28 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
               className={`w-4 h-4 shrink-0 ${
                 selectedFolderId === 'ALL' ? 'text-indigo-400' : 'text-zinc-400'
               }`}
+              aria-hidden="true"
             />
             <div className="min-w-0">
               <div className="text-xs font-semibold truncate">
                 Tất cả thư mục
               </div>
               <div className="text-[11px] text-zinc-500 font-mono tabular-nums">
-                {folders.length} thư mục · {totalVideos} video
+                {folders.length} thư mục · {statsSummary.totalVideos} video
               </div>
             </div>
           </div>
           <span className="text-xs font-mono tabular-nums text-zinc-300 shrink-0">
-            {totalKept}/{items.length}
+            {statsSummary.totalKept}/{items.length}
           </span>
         </button>
 
-        {/* Individual Subfolders */}
         {folders.map((folder) => {
-          const stats = getFolderStats(folder.id);
+          const stats = statsSummary.perFolder.get(folder.id) || {
+            kept: 0,
+            total: 0,
+            videos: 0,
+          };
           const isSelected = selectedFolderId === folder.id;
 
           return (
@@ -219,7 +244,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
               key={folder.id}
               type="button"
               onClick={() => onSelectFolder(folder.id)}
-              className={`w-full px-3 py-2.5 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
+              className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
                 isSelected
                   ? 'bg-indigo-500/15 text-indigo-200 border border-indigo-500/30'
                   : 'text-zinc-300 hover:bg-zinc-800/60 border border-transparent'
@@ -227,9 +252,15 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 {isSelected ? (
-                  <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <FolderOpen
+                    className="w-4 h-4 text-indigo-400 shrink-0"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <Folder className="w-4 h-4 text-zinc-500 shrink-0" />
+                  <Folder
+                    className="w-4 h-4 text-zinc-500 shrink-0"
+                    aria-hidden="true"
+                  />
                 )}
                 <div className="min-w-0">
                   <div
@@ -255,10 +286,10 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
         })}
       </div>
 
-      {/* Section 3: Grid Density & Keyboard Shortcuts Guide */}
-      <div className="p-3.5 border-t border-zinc-800 bg-zinc-950/50 space-y-3">
+      {/* Section 3: Grid Density & Studio Shortcuts */}
+      <div className="p-3 border-t border-zinc-800 bg-zinc-950/50 space-y-2.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-zinc-400">Kích thước lưới ảnh</span>
+          <span className="text-xs text-zinc-400">Số cột lưới ảnh</span>
           <div className="flex items-center gap-1 bg-zinc-900 p-0.5 rounded-md border border-zinc-800">
             {[2, 3, 4, 5, 6].map((cols) => (
               <button
@@ -270,7 +301,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
                     ? 'bg-indigo-600 text-white font-semibold'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
-                title={`Hiển thị ${cols} cột (${cols === 2 ? 'Ảnh cực lớn' : cols === 6 ? 'Thu nhỏ' : 'Tiêu chuẩn'})`}
+                title={`Hiển thị ${cols} cột`}
               >
                 {cols}
               </button>
@@ -280,27 +311,27 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
 
         <div className="text-[11px] text-zinc-400 space-y-1 pt-1 border-t border-zinc-800/80">
           <div className="font-semibold text-zinc-300 mb-1">
-            Phím tắt thao tác nhanh
+            Phím tắt Studio
           </div>
           <div className="flex justify-between">
-            <span>Phóng to soi chi tiết (500%)</span>
-            <span className="font-mono text-emerald-400">Space / Nhấp đúp</span>
+            <span>Phóng to &amp; kéo đặt Logo</span>
+            <span className="font-mono text-emerald-400">Space</span>
           </div>
           <div className="flex justify-between">
-            <span>Chuyển file trước / sau</span>
-            <span className="font-mono text-zinc-300">← / →</span>
+            <span>So sánh Ảnh gốc (Giữ phím)</span>
+            <span className="font-mono text-sky-400">\</span>
           </div>
           <div className="flex justify-between">
-            <span>Loại bỏ nhanh file đang chọn</span>
-            <span className="font-mono text-rose-400">X / Delete</span>
+            <span>Chấm sao nhanh</span>
+            <span className="font-mono text-amber-300">1 – 5</span>
           </div>
           <div className="flex justify-between">
-            <span>Hoàn tác loại bỏ</span>
-            <span className="font-mono text-amber-400">Z</span>
+            <span>Giữ (P) / Loại bỏ (X)</span>
+            <span className="font-mono text-rose-400">P / X</span>
           </div>
           <div className="flex justify-between">
-            <span>Mở khung cắt ảnh (Crop)</span>
-            <span className="font-mono text-indigo-400">C</span>
+            <span>Cắt khung (C) · Hoàn tác (Z)</span>
+            <span className="font-mono text-indigo-400">C / Z</span>
           </div>
         </div>
       </div>

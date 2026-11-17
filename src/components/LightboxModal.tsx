@@ -6,16 +6,26 @@ import {
   Maximize,
   Move,
   RotateCcw,
+  SplitSquareHorizontal,
+  Star,
   Trash2,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { DriveMediaItem } from '../types/media';
-import { LiveEditedPhotoPreview } from './VirtualMediaGrid';
+import { DriveMediaItem, StarRating, getActiveLogos } from '../types/media.ts';
+import { LiveEditedPhotoPreview } from './VirtualMediaGrid.tsx';
 
 interface LightboxModalProps {
   item: DriveMediaItem | null;
+  compareOriginal: boolean;
+  onCompareOriginalChange: (comparing: boolean) => void;
+  onRateItem: (itemId: string, rating: StarRating) => void;
+  onMoveLogoLayer: (
+    logoId: string,
+    customXPercent: number,
+    customYPercent: number
+  ) => void;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -31,6 +41,10 @@ const ZOOM_STEP = 0.35;
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({
   item,
+  compareOriginal,
+  onCompareOriginalChange,
+  onRateItem,
+  onMoveLogoLayer,
   onClose,
   onPrev,
   onNext,
@@ -42,6 +56,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [videoFallbackIframe, setVideoFallbackIframe] =
+    useState<boolean>(false);
+  const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null);
+
   const dragStartRef = useRef<{
     clientX: number;
     clientY: number;
@@ -50,11 +68,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   } | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset zoom and pan when switching media items
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setIsDragging(false);
+    setVideoFallbackIframe(false);
   }, [item?.id]);
 
   const handleSetZoom = useCallback((nextZoomVal: number) => {
@@ -73,7 +91,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     setPan({ x: 0, y: 0 });
   }, []);
 
-  // Keyboard shortcuts for zooming (+, -, 0) inside Lightbox
   useEffect(() => {
     if (!item || item.mediaType === 'video') return;
 
@@ -94,7 +111,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [item, zoom, handleSetZoom, handleResetZoom]);
 
-  // Smooth Mouse Wheel Zoom
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || !item || item.mediaType === 'video') return;
@@ -121,7 +137,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   if (!item) return null;
 
   const isVideo = item.mediaType === 'video';
+  const canStreamNativeVideo =
+    item.downloadUrl.startsWith('blob:') ||
+    item.downloadUrl.startsWith('/api/drive/stream');
   const driveEmbedUrl = `https://drive.google.com/file/d/${item.id}/preview`;
+  const activeLogoCount = isVideo ? 0 : getActiveLogos(item.edit).length;
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isVideo || e.button !== 0) return;
@@ -163,15 +183,18 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Xem chi tiết ${item.name}`}
       className="fixed inset-0 z-50 bg-black/94 backdrop-blur-xs flex flex-col select-none"
       onClick={onClose}
     >
       {/* Top Header Bar */}
       <div
-        className="h-14 px-6 bg-zinc-900/95 border-b border-zinc-800 flex items-center justify-between gap-4 shrink-0 z-30"
+        className="h-14 px-5 bg-zinc-900/95 border-b border-zinc-800 flex items-center justify-between gap-4 shrink-0 z-30"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-xs font-mono tabular-nums text-zinc-400 shrink-0">
             {currentIndex + 1} / {totalFiltered}
           </span>
@@ -181,18 +204,25 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           <span className="text-sm font-semibold text-zinc-100 truncate">
             {item.name}
           </span>
-          <span className="text-zinc-700" aria-hidden="true">
-            ·
-          </span>
-          <span className="text-xs text-zinc-400 truncate">
-            {item.folderName}
-          </span>
-          <span className="text-zinc-700" aria-hidden="true">
-            ·
-          </span>
-          <span className="text-xs font-mono tabular-nums text-zinc-500 shrink-0">
-            {item.width}×{item.height}px
-          </span>
+          <div className="hidden lg:flex items-center gap-0.5 ml-2">
+            {([1, 2, 3, 4, 5] as StarRating[]).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onRateItem(item.id, item.rating === s ? 0 : s)}
+                aria-label={`${s} sao`}
+                className="p-0.5 cursor-pointer"
+              >
+                <Star
+                  className={`w-3.5 h-3.5 ${
+                    item.rating >= s
+                      ? 'fill-amber-400 text-amber-400'
+                      : 'text-zinc-600 hover:text-zinc-400'
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Center Zoom Controls for Photos */}
@@ -202,8 +232,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               type="button"
               onClick={() => handleSetZoom(zoom - ZOOM_STEP)}
               disabled={zoom <= MIN_ZOOM}
+              aria-label="Thu nhỏ ảnh"
               className="p-1.5 rounded hover:bg-zinc-800 text-zinc-300 disabled:opacity-35 cursor-pointer"
-              title="Thu nhỏ (Phím - hoặc cuộn chuột xuống)"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
@@ -215,8 +245,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               step={0.05}
               value={zoom}
               onChange={(e) => handleSetZoom(Number(e.target.value))}
+              aria-label="Mức phóng to"
               className="w-24 accent-indigo-500 cursor-pointer"
-              title="Thanh trượt phóng to / thu nhỏ ảnh"
             />
 
             <span className="w-12 text-center text-xs font-mono tabular-nums text-zinc-200 font-semibold">
@@ -227,15 +257,14 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               type="button"
               onClick={() => handleSetZoom(zoom + ZOOM_STEP)}
               disabled={zoom >= MAX_ZOOM}
+              aria-label="Phóng to ảnh"
               className="p-1.5 rounded hover:bg-zinc-800 text-zinc-300 disabled:opacity-35 cursor-pointer"
-              title="Phóng to (Phím + hoặc cuộn chuột lên)"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
 
             <div className="h-4 w-px bg-zinc-800 mx-0.5" />
 
-            {/* Quick Zoom Presets */}
             {[1, 2, 3, 4].map((preset) => (
               <button
                 key={preset}
@@ -248,11 +277,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                     ? 'bg-indigo-600 text-white font-semibold'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
                 }`}
-                title={
-                  preset === 1
-                    ? 'Vừa khung hình (100% - Phím 0)'
-                    : `Phóng to ${preset * 100}% để soi chi tiết`
-                }
               >
                 {preset}x
               </button>
@@ -262,8 +286,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               <button
                 type="button"
                 onClick={handleResetZoom}
+                aria-label="Đặt lại khung hình chuẩn"
                 className="p-1.5 rounded hover:bg-zinc-800 text-amber-400 cursor-pointer"
-                title="Đặt lại khung hình chuẩn (Phím 0)"
               >
                 <Maximize className="w-3.5 h-3.5" />
               </button>
@@ -272,22 +296,39 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         )}
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {!isVideo && (
-            <button
-              type="button"
-              onClick={() => onOpenCrop(item)}
-              className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 border border-zinc-700 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Crop className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Cắt khung hình (C)</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onPointerDown={() => onCompareOriginalChange(true)}
+                onPointerUp={() => onCompareOriginalChange(false)}
+                onPointerLeave={() => onCompareOriginalChange(false)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 cursor-pointer ${
+                  compareOriginal
+                    ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                    : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-200'
+                }`}
+              >
+                <SplitSquareHorizontal className="w-3.5 h-3.5 text-sky-400" />
+                <span className="hidden md:inline">So sánh gốc (\)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpenCrop(item)}
+                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 border border-zinc-700 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <Crop className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Cắt (C)</span>
+              </button>
+            </>
           )}
 
           <button
             type="button"
             onClick={() => onToggleReject(item)}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               item.status === 'kept'
                 ? 'bg-rose-600 hover:bg-rose-500 text-white'
                 : 'bg-emerald-600 hover:bg-emerald-500 text-white'
@@ -296,12 +337,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             {item.status === 'kept' ? (
               <>
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Loại bỏ file này (X)</span>
+                <span>Loại bỏ (X)</span>
               </>
             ) : (
               <>
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Khôi phục lại</span>
+                <span>Khôi phục</span>
               </>
             )}
           </button>
@@ -309,15 +350,15 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng màn hình phóng to"
             className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white cursor-pointer"
-            title="Đóng (Esc)"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Main Viewport with Wheel Zoom & Drag-to-Pan */}
+      {/* Main Viewport */}
       <div
         ref={viewportRef}
         className="flex-1 relative flex items-center justify-center p-6 overflow-hidden"
@@ -326,32 +367,31 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        {/* Previous Button */}
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onPrev();
           }}
+          aria-label="File trước"
           className="absolute left-5 z-20 w-11 h-11 rounded-full bg-zinc-900/85 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
-          title="File trước (Mũi tên trái)"
         >
           <ChevronLeft className="w-6 h-6" />
         </button>
 
-        {/* Media Content */}
         <div
           className="max-w-5xl max-h-full w-full h-full flex items-center justify-center"
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={handleDoubleClickPhoto}
         >
           {isVideo ? (
-            item.downloadUrl.startsWith('blob:') ? (
+            canStreamNativeVideo && !videoFallbackIframe ? (
               <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl flex items-center justify-center">
                 <video
                   src={item.downloadUrl}
                   controls
                   autoPlay
+                  onError={() => setVideoFallbackIframe(true)}
                   className="w-full h-full object-contain"
                 />
               </div>
@@ -377,46 +417,57 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                     ? isDragging
                       ? 'grabbing'
                       : 'grab'
-                    : 'zoom-in',
+                    : 'default',
               }}
             >
               <LiveEditedPhotoPreview
                 item={item}
                 useHighRes={true}
+                showOriginal={compareOriginal}
+                activeLogoId={selectedLogoId}
+                onSelectLogoLayer={setSelectedLogoId}
+                onInteractiveMoveLogo={zoom === 1 ? onMoveLogoLayer : undefined}
                 className="max-h-[78vh] max-w-[82vw] rounded-lg shadow-2xl border border-zinc-800"
               />
             </div>
           )}
         </div>
 
-        {/* Next Button */}
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onNext();
           }}
+          aria-label="File tiếp theo"
           className="absolute right-5 z-20 w-11 h-11 rounded-full bg-zinc-900/85 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
-          title="File tiếp theo (Mũi tên phải)"
         >
           <ChevronRight className="w-6 h-6" />
         </button>
 
-        {/* Bottom Hint Bar for Zoom/Pan */}
         {!isVideo && (
           <div
             className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-lg bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-400 flex items-center gap-3 pointer-events-none shadow-md"
             onClick={(e) => e.stopPropagation()}
           >
-            <span>Cuộn chuột: Phóng to / Thu nhỏ (tới 500%)</span>
-            <span aria-hidden="true">·</span>
-            <span>Nhấp đúp: Phóng nhanh 2.5x</span>
+            <span>Cuộn chuột: Zoom tới 500%</span>
+            {zoom === 1 && activeLogoCount > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-emerald-300 flex items-center gap-1">
+                  <Move className="w-3 h-3" />
+                  <span>
+                    Kéo trực tiếp từng Logo để sắp xếp bố cục nhiều Logo
+                  </span>
+                </span>
+              </>
+            )}
             {zoom > 1 && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="text-indigo-300 flex items-center gap-1">
                   <Move className="w-3 h-3" />
-                  <span>Giữ chuột trái và kéo để di chuyển xem chi tiết</span>
+                  <span>Giữ chuột trái để kéo xem chi tiết</span>
                 </span>
               </>
             )}

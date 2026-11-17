@@ -3,48 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script>
-      (function () {
-        try {
-          var currentFetch = window.fetch ? window.fetch.bind(window) : undefined;
-          if (currentFetch) {
-            Object.defineProperty(window, 'fetch', {
-              configurable: true,
-              enumerable: true,
-              get: function () {
-                return currentFetch;
-              },
-              set: function (nextFetch) {
-                if (typeof nextFetch === 'function') {
-                  currentFetch = nextFetch;
-                }
-              },
-            });
-          }
-        } catch (_e) {
-          // Ignore if descriptor is non-configurable
-        }
-
-        window.addEventListener(
-          'error',
-          function (event) {
-            if (
-              (event.filename && event.filename.indexOf('chrome-extension://') === 0) ||
-              (event.message &&
-                event.message.indexOf('Cannot set property fetch of #<Window>') !== -1)
-            ) {
-              event.stopImmediatePropagation();
-              event.preventDefault();
-            }
-          },
-          true
-        );
-      })();
-    </script>
-    <title>CGM - Quản lý, Lọc & Chỉnh sửa Ảnh Google Drive</title>
-    <meta name="description" content="Ứng dụng quản lý, chọn lọc (culling), chỉnh sửa màu sắc, cắt ảnh, đóng dấu logo thông minh và xuất hàng loạt ảnh & video từ thư mục Google Drive tốc độ cao." />
-    <meta property="og:title" content="CGM - Quản lý, Lọc & Chỉnh sửa Ảnh Google Drive" />
-    <meta property="og:description" content="Ứng dụng quản lý, chọn lọc (culling), chỉnh sửa màu sắc, cắt ảnh, đóng dấu logo thông minh và xuất hàng loạt ảnh & video từ thư mục Google Drive tốc độ cao." />
+    <link rel="icon" type="image/png" href="/logo-cgm.png" />
+    <link rel="apple-touch-icon" href="/logo-cgm.png" />
+    <title>CGM Studio — Quản lý, Lọc & Chỉnh sửa Ảnh Sự Kiện</title>
+    <meta name="description" content="Ứng dụng quản lý, chọn lọc (culling), chỉnh sửa màu sắc, cắt ảnh, đóng dấu logo thông minh và xuất hàng loạt ảnh & video từ thư mục Google Drive hoặc máy tính tốc độ cao." />
+    <meta property="og:title" content="CGM Studio — Quản lý, Lọc & Chỉnh sửa Ảnh Sự Kiện" />
+    <meta property="og:description" content="Ứng dụng quản lý, chọn lọc (culling), chỉnh sửa màu sắc, cắt ảnh, đóng dấu logo thông minh và xuất hàng loạt ảnh & video từ thư mục Google Drive hoặc máy tính tốc độ cao." />
+    <meta property="og:image" content="/logo-cgm.png" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

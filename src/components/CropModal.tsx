@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Cropper, { Area, Point } from 'react-easy-crop';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
-import { CropArea, DriveMediaItem } from '../types/media';
+import { CropArea, DriveMediaItem } from '../types/media.ts';
 
 interface CropModalProps {
   item: DriveMediaItem | null;
@@ -44,6 +44,10 @@ const ASPECT_PRESETS: AspectPreset[] = [
     getAspect: () => 3 / 2,
   },
   {
+    label: '9:16 (Story/Reels)',
+    getAspect: () => 9 / 16,
+  },
+  {
     label: 'Tự do',
     getAspect: () => undefined,
   },
@@ -54,37 +58,42 @@ export const CropModal: React.FC<CropModalProps> = ({
   onClose,
   onApplyCrop,
 }) => {
-  if (!item || item.mediaType !== 'image') return null;
-
+  // ALL React hooks MUST execute unconditionally before any early return
   const isRotatedPerpendicular =
-    item.edit.rotation === 90 || item.edit.rotation === 270;
-  const effectiveW = isRotatedPerpendicular ? item.height : item.width;
-  const effectiveH = isRotatedPerpendicular ? item.width : item.height;
+    item?.edit.rotation === 90 || item?.edit.rotation === 270;
+  const effectiveW = item
+    ? isRotatedPerpendicular
+      ? item.height
+      : item.width
+    : 1600;
+  const effectiveH = item
+    ? isRotatedPerpendicular
+      ? item.width
+      : item.height
+    : 1067;
 
-  const [selectedPresetLabel, setSelectedPresetLabel] = useState<string>(
-    item.edit.aspectRatioLabel || 'Tỷ lệ gốc'
-  );
+  const [selectedPresetLabel, setSelectedPresetLabel] =
+    useState<string>('Tỷ lệ gốc');
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState<number>(1);
-  const [freeWidthRatio, setFreeWidthRatio] = useState<number>(
-    effectiveW / Math.max(1, effectiveH)
-  );
-
+  const [freeWidthRatio, setFreeWidthRatio] = useState<number>(1.5);
   const [latestAreaPercent, setLatestAreaPercent] = useState<CropArea | null>(
-    item.edit.cropPercent
+    null
   );
   const [latestAreaPixels, setLatestAreaPixels] = useState<CropArea | null>(
-    item.edit.croppedAreaPixels
+    null
   );
 
-  const currentPreset =
-    ASPECT_PRESETS.find((p) => p.label === selectedPresetLabel) ||
-    ASPECT_PRESETS[0];
-
-  const computedAspect =
-    selectedPresetLabel === 'Tự do'
-      ? freeWidthRatio
-      : currentPreset.getAspect(effectiveW, effectiveH) || 1;
+  // Sync crop modal state whenever a different photo is opened
+  useEffect(() => {
+    if (!item || item.mediaType !== 'image') return;
+    setSelectedPresetLabel(item.edit.aspectRatioLabel || 'Tỷ lệ gốc');
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setFreeWidthRatio(effectiveW / Math.max(1, effectiveH));
+    setLatestAreaPercent(item.edit.cropPercent);
+    setLatestAreaPixels(item.edit.croppedAreaPixels);
+  }, [item?.id, effectiveW, effectiveH]);
 
   const onCropComplete = useCallback(
     (croppedArea: Area, croppedAreaPixels: Area) => {
@@ -103,6 +112,17 @@ export const CropModal: React.FC<CropModalProps> = ({
     },
     []
   );
+
+  if (!item || item.mediaType !== 'image') return null;
+
+  const currentPreset =
+    ASPECT_PRESETS.find((p) => p.label === selectedPresetLabel) ||
+    ASPECT_PRESETS[0];
+
+  const computedAspect =
+    selectedPresetLabel === 'Tự do'
+      ? freeWidthRatio
+      : currentPreset.getAspect(effectiveW, effectiveH) || 1;
 
   const handleSave = () => {
     onApplyCrop(item.id, {
@@ -126,6 +146,9 @@ export const CropModal: React.FC<CropModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Cắt khung hình ảnh ${item.name}`}
       className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-6 select-none"
       onClick={onClose}
     >
@@ -136,7 +159,7 @@ export const CropModal: React.FC<CropModalProps> = ({
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <CropIcon className="w-4 h-4 text-indigo-400" />
+            <CropIcon className="w-4 h-4 text-indigo-400" aria-hidden="true" />
             <h2 className="text-sm font-bold text-zinc-100">
               Cắt khung hình &amp; Tỷ lệ ảnh — {item.name}
             </h2>
@@ -144,6 +167,7 @@ export const CropModal: React.FC<CropModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng bảng cắt ảnh"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -167,16 +191,16 @@ export const CropModal: React.FC<CropModalProps> = ({
 
         {/* Aspect Ratio Presets & Controls */}
         <div className="p-5 bg-zinc-900 border-t border-zinc-800 space-y-4">
-          {/* Aspect Ratio Buttons */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-zinc-400">
                 Chọn tỷ lệ khung hình chuẩn
               </span>
-              {latestAreaPixels && (
+              {latestAreaPercent && (
                 <span className="text-xs font-mono tabular-nums text-zinc-400">
-                  Vùng cắt: {Math.round(latestAreaPixels.width)} ×{' '}
-                  {Math.round(latestAreaPixels.height)} px
+                  Kích thước xuất dự kiến:{' '}
+                  {Math.round((latestAreaPercent.width / 100) * effectiveW)} ×{' '}
+                  {Math.round((latestAreaPercent.height / 100) * effectiveH)} px
                 </span>
               )}
             </div>
@@ -189,7 +213,7 @@ export const CropModal: React.FC<CropModalProps> = ({
                     key={preset.label}
                     type="button"
                     onClick={() => setSelectedPresetLabel(preset.label)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap ${
                       active
                         ? 'bg-indigo-600 text-white border-indigo-500'
                         : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:bg-zinc-800'
@@ -202,7 +226,6 @@ export const CropModal: React.FC<CropModalProps> = ({
             </div>
           </div>
 
-          {/* Zoom & Free Aspect Ratio Sliders */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
@@ -234,8 +257,8 @@ export const CropModal: React.FC<CropModalProps> = ({
                 </div>
                 <input
                   type="range"
-                  min={0.5}
-                  max={2.4}
+                  min={0.4}
+                  max={2.6}
                   step={0.05}
                   value={freeWidthRatio}
                   onChange={(e) => setFreeWidthRatio(Number(e.target.value))}
@@ -245,7 +268,6 @@ export const CropModal: React.FC<CropModalProps> = ({
             )}
           </div>
 
-          {/* Modal Footer Actions */}
           <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
             <button
               type="button"

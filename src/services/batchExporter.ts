@@ -1,35 +1,31 @@
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
 import {
-  DriveMediaItem,
-  ExportFailedItem,
-  ExportOptions,
-  ImageExportFormat,
-} from '../types/media';
-import { processPhotoToBlob } from './imageProcessor';
+  isPhotoEdited,
+  type DriveMediaItem,
+  type ExportFailedItem,
+  type ExportOptions,
+  type ImageExportFormat,
+} from '../types/media.ts';
+import {
+  sanitizeFileToken,
+  sanitizeFolderNameForDisk,
+} from '../utils/mediaMath.ts';
+import { processPhotoToBlob } from './imageProcessor.ts';
+
+function triggerNativeBlobDownload(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export { sanitizeFileToken, sanitizeFolderNameForDisk };
 
 const WORKER_CONCURRENCY = 4;
 const MAX_FILES_PER_ZIP_CHUNK = 100;
-
-/**
- * Removes Vietnamese diacritics and unsafe filesystem characters for clean folder/file tokens
- */
-export function sanitizeFileToken(input: string): string {
-  return input
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .replace(/[^a-zA-Z0-9_-]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-}
-
-/**
- * Sanitizes folder name for disk creation while keeping readable Vietnamese characters
- */
-export function sanitizeFolderNameForDisk(folderName: string): string {
-  return folderName.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim() || 'Thu_Muc';
-}
 
 export function stripFileExtension(fileName: string): {
   baseName: string;
@@ -45,26 +41,46 @@ export function stripFileExtension(fileName: string): {
   };
 }
 
+export function canBypassPhotoReencode(
+  item: DriveMediaItem,
+  options: ExportOptions
+): boolean {
+  if (item.mediaType !== 'image') return false;
+  if (!options.skipReencodeIfUnedited) return false;
+  if (options.maxDimension > 0) return false;
+  if (isPhotoEdited(item.edit).hasAnyEdit) return false;
+
+  const mime = item.mimeType.toLowerCase();
+  if (options.format === 'image/jpeg') {
+    return mime === 'image/jpeg' || mime === 'image/jpg';
+  }
+  return mime === options.format;
+}
+
 export function getExtensionForFormat(
   item: DriveMediaItem,
-  format: ImageExportFormat
+  options: ExportOptions
 ): string {
   if (item.mediaType === 'video') {
     const { ext } = stripFileExtension(item.name);
     return ext || 'mp4';
   }
-  return format === 'image/webp' ? 'webp' : 'jpg';
+  if (canBypassPhotoReencode(item, options)) {
+    const { ext } = stripFileExtension(item.name);
+    if (ext) return ext;
+  }
+  const fmt: ImageExportFormat = options.format;
+  if (fmt === 'image/png') return 'png';
+  if (fmt === 'image/webp') return 'webp';
+  return 'jpg';
 }
 
-/**
- * Builds the output filename for an item based on ExportOptions and its sequential number
- */
 export function formatExportFileName(
   item: DriveMediaItem,
   options: ExportOptions,
   seqIndex: number
 ): string {
-  const targetExt = getExtensionForFormat(item, options.format);
+  const targetExt = getExtensionForFormat(item, options);
   const { baseName } = stripFileExtension(item.name);
 
   if (options.renameMode === 'original') {
@@ -73,7 +89,8 @@ export function formatExportFileName(
 
   const pattern = options.customPattern.trim() || '{prefix}_{folder}_{index3}';
   const cleanPrefix = sanitizeFileToken(options.customPrefix || 'CGM');
-  const cleanFolder = sanitizeFileToken(item.folderName || 'Folder');
+  const leafFolder = item.folderName.split('/').pop() || item.folderName || 'Folder';
+  const cleanFolder = sanitizeFileToken(leafFolder);
   const cleanOriginal = sanitizeFileToken(baseName || 'File');
 
   const indexStr = String(seqIndex);
@@ -88,7 +105,6 @@ export function formatExportFileName(
     .replace(/\{index3\}/gi, index3Str)
     .replace(/\{index\}/gi, indexStr);
 
-  // Clean up redundant underscores
   built = built
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/__+/g, '_')
@@ -107,10 +123,6 @@ export interface PlannedExportTask {
   targetFileName: string;
 }
 
-/**
- * Generates the ordered list of export tasks with collision-safe filenames
- * preserving the exact 5-8 subfolder hierarchy.
- */
 export function buildExportPlan(
   items: DriveMediaItem[],
   options: ExportOptions
@@ -135,7 +147,6 @@ export function buildExportPlan(
     let targetFileName = formatExportFileName(item, options, seqIndex);
     let fullKey = `${subFolderName}/${targetFileName}`.toLowerCase();
 
-    // Prevent overwriting if two files end up with the same name in the same folder
     let collisionCount = 1;
     while (usedPaths.has(fullKey)) {
       const { baseName, ext } = stripFileExtension(targetFileName);
@@ -153,10 +164,7 @@ export function buildExportPlan(
   });
 }
 
-/**
- * Zero-RAM Video Streaming into a FileSystemFileHandle writable stream
- */
-async function streamVideoToFileHandle(
+async function streamRawItemToFileHandle(
   item: DriveMediaItem,
   fileHandle: any,
   signal: AbortSignal
@@ -164,15 +172,20 @@ async function streamVideoToFileHandle(
   const writable = await fileHandle.createWritable();
 
   try {
+    if (item.rawFile) {
+      await writable.write(item.rawFile);
+      await writable.close();
+      return;
+    }
+
     const response = await fetch(item.downloadUrl, { signal });
     if (!response.ok) {
       throw new Error(
-        `Không thể tải luồng Video gốc (Mã HTTP ${response.status}).`
+        `Không thể tải luồng dữ liệu gốc (Mã HTTP ${response.status}).`
       );
     }
 
     if (response.body && typeof response.body.pipeTo === 'function') {
-      // Zero-RAM streaming directly from network stream to disk writable stream
       await response.body.pipeTo(writable, { signal });
     } else {
       const blob = await response.blob();
@@ -183,21 +196,20 @@ async function streamVideoToFileHandle(
     try {
       await writable.abort();
     } catch {
-      // ignore abort error
+      // ignore
     }
     throw err;
   }
 }
 
-async function fetchVideoBlobForZip(
+async function fetchRawBlobForZip(
   item: DriveMediaItem,
   signal: AbortSignal
 ): Promise<Blob> {
+  if (item.rawFile) return item.rawFile;
   const response = await fetch(item.downloadUrl, { signal });
   if (!response.ok) {
-    throw new Error(
-      `Không thể tải file Video gốc (Mã HTTP ${response.status}).`
-    );
+    throw new Error(`Không thể tải file gốc (Mã HTTP ${response.status}).`);
   }
   return await response.blob();
 }
@@ -213,12 +225,6 @@ export interface BatchExportCallbacks {
   }) => void;
 }
 
-/**
- * Executes the 4-worker parallel export queue.
- * Attempts File System Access API (showDirectoryPicker) first on Chromium browsers,
- * and automatically falls back to chunked ZIP archives (max 100 files per ZIP)
- * if running in Firefox/Safari or inside a sandboxed cross-origin iframe.
- */
 export async function runBatchExportTasks(
   tasks: PlannedExportTask[],
   options: ExportOptions,
@@ -234,7 +240,6 @@ export async function runBatchExportTasks(
   let completedSuccessCount = 0;
   const failedItems: ExportFailedItem[] = [];
 
-  // Step 1: Try acquiring Directory Handle via File System Access API if available
   let rootDirHandle: any = null;
   let exportMethodLabel = 'Tải xuống tệp nén ZIP giữ nguyên cấu trúc thư mục';
 
@@ -244,31 +249,43 @@ export async function runBatchExportTasks(
         mode: 'readwrite',
       });
       exportMethodLabel =
-        'Ghi trực tiếp vào ổ cứng (File System Access API - 4 luồng song song)';
+        'Ghi trực tiếp ổ cứng (OffscreenCanvas 4 Worker song song)';
     } catch (pickerErr: any) {
       if (pickerErr?.name === 'AbortError') {
-        throw new DOMException('Người dùng đã hủy chọn thư mục lưu.', 'AbortError');
+        throw new DOMException(
+          'Người dùng đã hủy chọn thư mục lưu.',
+          'AbortError'
+        );
       }
-      // If SecurityError (e.g., cross-origin iframe constraint), automatically fall back to chunked ZIP
       rootDirHandle = null;
       exportMethodLabel =
-        'Đóng gói ZIP phân đoạn tự động (Giữ nguyên cấu trúc 5-8 thư mục con)';
+        'Đóng gói ZIP phân đoạn tự động (Giữ nguyên cấu trúc thư mục con)';
     }
   }
 
-  // MODE A: Direct Disk Writing via File System Access API (4 concurrent workers)
+  // MODE A: Direct Disk Writing via File System Access API (supports multi-level nested subfolders!)
   if (rootDirHandle) {
     const subDirCache = new Map<string, any>();
 
-    const getSubFolderHandle = async (subFolderName: string) => {
-      if (subDirCache.has(subFolderName)) {
-        return subDirCache.get(subFolderName);
+    const getNestedSubFolderHandle = async (subFolderPath: string) => {
+      if (subDirCache.has(subFolderPath)) {
+        return subDirCache.get(subFolderPath);
       }
-      const handle = await rootDirHandle.getDirectoryHandle(subFolderName, {
-        create: true,
-      });
-      subDirCache.set(subFolderName, handle);
-      return handle;
+      const segments = subFolderPath.split('/').filter(Boolean);
+      let currentDir = rootDirHandle;
+      let builtPath = '';
+      for (const seg of segments) {
+        builtPath = builtPath ? `${builtPath}/${seg}` : seg;
+        if (subDirCache.has(builtPath)) {
+          currentDir = subDirCache.get(builtPath);
+        } else {
+          currentDir = await currentDir.getDirectoryHandle(seg, {
+            create: true,
+          });
+          subDirCache.set(builtPath, currentDir);
+        }
+      }
+      return currentDir;
     };
 
     let cursor = 0;
@@ -289,19 +306,25 @@ export async function runBatchExportTasks(
         });
 
         try {
-          const folderHandle = await getSubFolderHandle(task.subFolderName);
+          const folderHandle = await getNestedSubFolderHandle(
+            task.subFolderName
+          );
           const fileHandle = await folderHandle.getFileHandle(
             task.targetFileName,
             { create: true }
           );
 
-          if (task.item.mediaType === 'video') {
-            await streamVideoToFileHandle(task.item, fileHandle, signal);
+          if (
+            task.item.mediaType === 'video' ||
+            canBypassPhotoReencode(task.item, options)
+          ) {
+            await streamRawItemToFileHandle(task.item, fileHandle, signal);
           } else {
             const photoBlob = await processPhotoToBlob(
               task.item,
               options.format,
               options.quality,
+              options.maxDimension,
               signal
             );
             const writable = await fileHandle.createWritable();
@@ -311,9 +334,7 @@ export async function runBatchExportTasks(
 
           completedSuccessCount += 1;
         } catch (err: any) {
-          if (signal.aborted || err?.name === 'AbortError') {
-            break;
-          }
+          if (signal.aborted || err?.name === 'AbortError') break;
           failedItems.push({
             item: task.item,
             targetFileName: task.targetFileName,
@@ -334,20 +355,18 @@ export async function runBatchExportTasks(
       }
     };
 
-    const workers = Array.from(
-      { length: Math.min(WORKER_CONCURRENCY, tasks.length) },
-      () => worker()
+    await Promise.all(
+      Array.from(
+        { length: Math.min(WORKER_CONCURRENCY, tasks.length) },
+        () => worker()
+      )
     );
-    await Promise.all(workers);
 
-    return {
-      completedSuccessCount,
-      failedItems,
-      exportMethodLabel,
-    };
+    return { completedSuccessCount, failedItems, exportMethodLabel };
   }
 
-  // MODE B: Chunked ZIP Archive Fallback (max 100 files per ZIP to protect browser RAM)
+  // MODE B: Chunked ZIP Archive Fallback (lazy-load JSZip only when needed)
+  const { default: JSZip } = await import('jszip');
   const totalChunks = Math.ceil(tasks.length / MAX_FILES_PER_ZIP_CHUNK);
 
   for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
@@ -379,13 +398,17 @@ export async function runBatchExportTasks(
 
         try {
           let blob: Blob;
-          if (task.item.mediaType === 'video') {
-            blob = await fetchVideoBlobForZip(task.item, signal);
+          if (
+            task.item.mediaType === 'video' ||
+            canBypassPhotoReencode(task.item, options)
+          ) {
+            blob = await fetchRawBlobForZip(task.item, signal);
           } else {
             blob = await processPhotoToBlob(
               task.item,
               options.format,
               options.quality,
+              options.maxDimension,
               signal
             );
           }
@@ -393,9 +416,7 @@ export async function runBatchExportTasks(
           zip.file(`${task.subFolderName}/${task.targetFileName}`, blob);
           completedSuccessCount += 1;
         } catch (err: any) {
-          if (signal.aborted || err?.name === 'AbortError') {
-            break;
-          }
+          if (signal.aborted || err?.name === 'AbortError') break;
           failedItems.push({
             item: task.item,
             targetFileName: task.targetFileName,
@@ -415,29 +436,28 @@ export async function runBatchExportTasks(
       }
     };
 
-    const workers = Array.from(
-      { length: Math.min(WORKER_CONCURRENCY, chunkTasks.length) },
-      () => worker()
+    await Promise.all(
+      Array.from(
+        { length: Math.min(WORKER_CONCURRENCY, chunkTasks.length) },
+        () => worker()
+      )
     );
-    await Promise.all(workers);
 
     if (!signal.aborted && completedSuccessCount > 0) {
       const zipBlob = await zip.generateAsync({
         type: 'blob',
         compression: 'STORE',
       });
-      const prefixClean = sanitizeFileToken(options.customPrefix || 'CGM_Export');
+      const prefixClean = sanitizeFileToken(
+        options.customPrefix || 'CGM_Export'
+      );
       const zipFileName =
         totalChunks > 1
           ? `${prefixClean}_Phan_${chunkIndex + 1}_tren_${totalChunks}.zip`
           : `${prefixClean}_KetQua.zip`;
-      saveAs(zipBlob, zipFileName);
+      triggerNativeBlobDownload(zipBlob, zipFileName);
     }
   }
 
-  return {
-    completedSuccessCount,
-    failedItems,
-    exportMethodLabel,
-  };
+  return { completedSuccessCount, failedItems, exportMethodLabel };
 }
