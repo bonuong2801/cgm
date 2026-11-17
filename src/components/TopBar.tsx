@@ -1,21 +1,30 @@
 import React, { useState, useRef } from 'react';
 import {
+  Crown,
   Download,
   FolderSearch,
   FolderUp,
   ImagePlus,
   Loader2,
+  Lock,
+  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
+  Shield,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
+import type { PlanEntitlements, UserProfile } from '../types/auth.ts';
 
 interface TopBarProps {
+  profile: UserProfile | null;
+  entitlements: PlanEntitlements;
+  onOpenUpgradeModal: (reason?: string) => void;
+  onSignOut: () => void;
   driveUrlInput: string;
   onDriveUrlChange: (val: string) => void;
   onLoadDriveUrl: (e?: React.FormEvent) => void;
@@ -38,6 +47,10 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
+  profile,
+  entitlements,
+  onOpenUpgradeModal,
+  onSignOut,
   driveUrlInput,
   onDriveUrlChange,
   onLoadDriveUrl,
@@ -70,9 +83,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <header className="h-14 bg-zinc-900 border-b border-zinc-800 px-3.5 flex items-center justify-between gap-3 shrink-0 select-none z-20">
-      {/* Zone 1: Left Sidebar Toggle + Brand Title */}
-      <div className="flex items-center gap-2.5 shrink-0">
+    <header className="h-14 bg-zinc-900 border-b border-zinc-800 px-3 flex items-center justify-between gap-2.5 shrink-0 select-none z-20">
+      {/* Zone 1: Left Sidebar Toggle + Official Brand Logo */}
+      <div className="flex items-center gap-2 shrink-0">
         <button
           type="button"
           onClick={onToggleLeftSidebar}
@@ -96,13 +109,13 @@ export const TopBar: React.FC<TopBarProps> = ({
           alt="CGM Studio Logo"
           className="w-8 h-8 rounded-lg object-cover border border-zinc-800 shadow-sm shrink-0"
         />
-        <span className="text-sm font-bold tracking-tight text-zinc-100 whitespace-nowrap hidden md:inline">
+        <span className="text-sm font-bold tracking-tight text-zinc-100 whitespace-nowrap hidden xl:inline">
           CGM Studio
         </span>
       </div>
 
-      {/* Zone 2: Google Drive Folder Link Input + Bulk Local Import */}
-      <div className="flex-1 max-w-3xl flex items-center gap-2 min-w-0">
+      {/* Zone 2: Google Drive Input + Bulk Local Import */}
+      <div className="flex-1 max-w-2xl flex items-center gap-1.5 min-w-0">
         <form
           onSubmit={onLoadDriveUrl}
           className="flex-1 flex items-center gap-1.5 min-w-0"
@@ -125,7 +138,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               onChange={(e) => onDriveUrlChange(e.target.value)}
               onFocus={() => setInputFocused(true)}
               onBlur={() => setInputFocused(false)}
-              placeholder="Dán link thư mục Google Drive công khai (hỗ trợ đệ quy nhiều cấp)..."
+              placeholder="Dán link thư mục Google Drive công khai..."
               className="w-full bg-transparent text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none min-w-0"
               aria-label="Đường liên kết thư mục Google Drive"
             />
@@ -144,12 +157,12 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="submit"
             disabled={isLoading || !driveUrlInput.trim()}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
           >
             {isLoading ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Đang tải...</span>
+                <span>Tải...</span>
               </>
             ) : (
               <span>Tải Drive</span>
@@ -178,29 +191,29 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={() => localFilesInputRef.current?.click()}
           disabled={isLoading}
-          className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+          className="px-2.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
           title="Chọn hàng loạt ảnh từ máy tính"
         >
           <ImagePlus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          <span className="hidden sm:inline">Tải ảnh</span>
+          <span className="hidden md:inline">Tải ảnh</span>
         </button>
 
         <button
           type="button"
           onClick={() => localFolderInputRef.current?.click()}
           disabled={isLoading}
-          className="px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors hidden lg:flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+          className="px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors hidden xl:flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
           title="Tải nguyên thư mục nhiều cấp từ máy tính"
         >
           <FolderUp
             className="w-3.5 h-3.5 text-indigo-400 shrink-0"
             aria-hidden="true"
           />
-          <span>Tải thư mục</span>
+          <span>Thư mục</span>
         </button>
       </div>
 
-      {/* Zone 3: AI Cull + Clear + Undo + Export + Right Inspector Toggle */}
+      {/* Zone 3: AI Cull + Clear + Undo + Export + Account Tier Badge */}
       <div className="flex items-center gap-1.5 shrink-0">
         {totalCount > 0 &&
           (aiCullProgress?.running ? (
@@ -219,12 +232,23 @@ export const TopBar: React.FC<TopBarProps> = ({
           ) : (
             <button
               type="button"
-              onClick={onRunAiCull}
-              className="px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors hidden md:flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-              title="Dùng Gemini AI phát hiện ảnh nhắm mắt, rung nhòe và tự chấm sao (1-5)"
+              onClick={() => {
+                if (!entitlements.canUseAiCull) {
+                  onOpenUpgradeModal(
+                    'Tính năng Gemini AI tự động lọc ảnh nhắm mắt, rung nhòe & chấm sao dành riêng cho Tài khoản Mở khóa Full (Pro).'
+                  );
+                } else {
+                  onRunAiCull();
+                }
+              }}
+              className="px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors hidden lg:flex items-center gap-1 whitespace-nowrap cursor-pointer"
+              title="Dùng Gemini AI phát hiện ảnh nhắm mắt, rung nhòe"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
-              <span className="hidden xl:inline">AI lọc ảnh lỗi</span>
+              <span className="hidden 2xl:inline">AI lọc ảnh</span>
+              {!entitlements.canUseAiCull && (
+                <Lock className="w-3 h-3 text-amber-400" aria-hidden="true" />
+              )}
             </button>
           ))}
 
@@ -232,12 +256,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onClearAllWorkspace}
-            className="p-1.5 xl:px-2.5 xl:py-1.5 text-xs font-medium text-zinc-400 hover:text-rose-300 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap cursor-pointer"
+            className="p-1.5 text-xs font-medium text-zinc-400 hover:text-rose-300 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors cursor-pointer"
             title="Xóa danh sách hiện tại & giải phóng RAM"
             aria-label="Làm mới không gian làm việc"
           >
             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-            <span className="hidden xl:inline">Làm mới</span>
           </button>
         )}
 
@@ -245,11 +268,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onUndoReject}
-            className="px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap cursor-pointer"
-            title="Hoàn tác thao tác loại bỏ vừa rồi (Phím Z)"
+            className="p-1.5 text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors cursor-pointer"
+            title="Hoàn tác loại bỏ (Phím Z)"
+            aria-label="Hoàn tác loại bỏ"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
-            <span className="hidden sm:inline">Hoàn tác</span>
+            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
           </button>
         )}
 
@@ -257,16 +280,57 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={onOpenExportModal}
           disabled={keptCount === 0}
-          className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
+          className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" aria-hidden="true" />
-          <span>Xuất file</span>
+          <span>Xuất</span>
           {totalCount > 0 && (
             <span className="font-mono tabular-nums text-indigo-100 font-normal">
-              ({keptCount}/{totalCount})
+              ({keptCount})
             </span>
           )}
         </button>
+
+        {/* Account Tier CTA / Status Badge */}
+        {entitlements.isPro ? (
+          <button
+            type="button"
+            onClick={() => onOpenUpgradeModal()}
+            title={`${profile?.email || ''} — Đã mở khóa Full chức năng${
+              profile?.role === 'admin' ? ' (Quản trị viên — bấm để tạo Mã VIP)' : ''
+            }`}
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-xs font-semibold text-emerald-300 flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+          >
+            {profile?.role === 'admin' ? (
+              <Shield className="w-3.5 h-3.5 text-amber-400" />
+            ) : (
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span>PRO FULL</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onOpenUpgradeModal()}
+            title={`${profile?.email || ''} — Đang dùng Tài khoản Thường. Bấm để Mở khóa Full chức năng!`}
+            className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-zinc-950 text-xs font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer shadow-xs"
+          >
+            <Crown className="w-3.5 h-3.5" />
+            <span>Mở khóa Full</span>
+          </button>
+        )}
+
+        {profile && (
+          <button
+            type="button"
+            onClick={onSignOut}
+            aria-label="Đăng xuất tài khoản"
+            title={`Đăng xuất (${profile.email})`}
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-zinc-800 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        )}
 
         <button
           type="button"

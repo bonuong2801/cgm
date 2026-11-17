@@ -10,6 +10,7 @@ import {
   sanitizeFolderNameForDisk,
 } from '../utils/mediaMath.ts';
 import { processPhotoToBlob } from './imageProcessor.ts';
+import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 
 function triggerNativeBlobDownload(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
@@ -178,7 +179,9 @@ async function streamRawItemToFileHandle(
       return;
     }
 
-    const response = await fetch(item.downloadUrl, { signal });
+    const response = await fetch(attachAuthToStreamUrl(item.downloadUrl), {
+      signal,
+    });
     if (!response.ok) {
       throw new Error(
         `Không thể tải luồng dữ liệu gốc (Mã HTTP ${response.status}).`
@@ -207,7 +210,9 @@ async function fetchRawBlobForZip(
   signal: AbortSignal
 ): Promise<Blob> {
   if (item.rawFile) return item.rawFile;
-  const response = await fetch(item.downloadUrl, { signal });
+  const response = await fetch(attachAuthToStreamUrl(item.downloadUrl), {
+    signal,
+  });
   if (!response.ok) {
     throw new Error(`Không thể tải file gốc (Mã HTTP ${response.status}).`);
   }

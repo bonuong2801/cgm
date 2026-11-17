@@ -4,6 +4,7 @@ import {
   type ExportMaxDimension,
   type ImageExportFormat,
 } from '../types/media.ts';
+import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 import {
   buildCssFilterString,
   computeFrameGeometry,
@@ -187,7 +188,9 @@ async function processPhotoMainThreadFallback(
     !item.downloadUrl.startsWith('data:') &&
     !item.downloadUrl.startsWith('blob:')
   ) {
-    const response = await fetch(item.downloadUrl, { signal });
+    const response = await fetch(attachAuthToStreamUrl(item.downloadUrl), {
+      signal,
+    });
     if (!response.ok) {
       throw new Error(
         `Không thể tải dữ liệu ảnh gốc chất lượng cao (Mã HTTP ${response.status}).`
@@ -318,7 +321,10 @@ export async function processPhotoToBlob(
       const r = await fetch(item.downloadUrl, { signal });
       sourceBlob = await r.blob();
     } else {
-      resolvedUrl = new URL(item.downloadUrl, window.location.origin).href;
+      resolvedUrl = new URL(
+        attachAuthToStreamUrl(item.downloadUrl),
+        window.location.origin
+      ).href;
     }
   }
 

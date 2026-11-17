@@ -13,6 +13,7 @@ import {
   Film,
   FolderSync,
   Image as ImageIcon,
+  Lock,
   Move,
   Play,
   Plus,
@@ -24,6 +25,7 @@ import {
   Star,
   Trash2,
 } from 'lucide-react';
+import type { PlanEntitlements } from '../types/auth.ts';
 import {
   DEFAULT_EDIT_CONFIG,
   DriveMediaItem,
@@ -45,6 +47,8 @@ import {
 export type LogoApplyScope = 'checked-or-all' | 'current-folder' | 'single';
 
 interface EditorInspectorProps {
+  entitlements: PlanEntitlements;
+  onRequestUpgrade: (reason: string) => void;
   selectedItem: DriveMediaItem | null;
   checkedCount: number;
   keptPhotoCount: number;
@@ -93,6 +97,8 @@ export function formatLogoPositionBadge(pos: LogoPosition, xPct: number, yPct: n
 }
 
 export const EditorInspector: React.FC<EditorInspectorProps> = ({
+  entitlements,
+  onRequestUpgrade,
   selectedItem,
   checkedCount,
   keptPhotoCount,
@@ -149,12 +155,36 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
     activeLogosStack[0] ||
     null;
 
+  const handleClickAddLogoButton = () => {
+    if (activeLogosStack.length >= entitlements.maxLogoLayers) {
+      onRequestUpgrade(
+        'Tài khoản Thường chỉ gắn tối đa 1 Logo cơ bản. Mở khóa Full để ghép không giới hạn nhiều Logo (Ban tổ chức, Nhà tài trợ, Studio) trên cùng 1 bức ảnh!'
+      );
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
   // Upload 1 or MULTIPLE logo files simultaneously and composite them onto the photo!
   const handleAddLogoFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList);
+    let files = Array.from(fileList);
     e.target.value = '';
+
+    const remainingSlots = entitlements.maxLogoLayers - activeLogosStack.length;
+    if (remainingSlots <= 0) {
+      onRequestUpgrade(
+        'Tài khoản Thường chỉ gắn tối đa 1 Logo cơ bản. Mở khóa Full để ghép nhiều Logo trên cùng 1 bức ảnh!'
+      );
+      return;
+    }
+    if (files.length > remainingSlots) {
+      files = files.slice(0, remainingSlots);
+      onRequestUpgrade(
+        'Bạn đã chọn nhiều Logo cùng lúc! Tài khoản Thường đã gắn Logo đầu tiên — hãy Mở khóa Full để ghép đồng loạt tất cả các Logo!'
+      );
+    }
 
     try {
       const decodedList = await Promise.all(
@@ -236,6 +266,12 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
   };
 
   const handleDuplicateLayer = (layer: LogoLayer) => {
+    if (activeLogosStack.length >= entitlements.maxLogoLayers) {
+      onRequestUpgrade(
+        'Nhân bản thêm nhiều lớp Logo trên cùng 1 ảnh dành cho Tài khoản Mở khóa Full (Pro).'
+      );
+      return;
+    }
     let dupId = '';
     onBatchUpdateLogos((prev) => {
       const dup = createLogoLayer(
@@ -283,6 +319,12 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
     customXPercent: number,
     customYPercent: number
   ) => {
+    if (!entitlements.canFreeDragLogo) {
+      onRequestUpgrade(
+        'Tính năng kéo-thả đặt tọa độ Logo tự do dành cho Tài khoản Mở khóa Full (Pro).'
+      );
+      return;
+    }
     updateLayerById(logoId, (l) => ({
       ...l,
       position: 'custom',
@@ -292,6 +334,12 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
   };
 
   const handleSaveCurrentSetAsPreset = () => {
+    if (!entitlements.canSaveLogoPresets) {
+      onRequestUpgrade(
+        'Tính năng Lưu Bộ Logo Mẫu Studio để dùng lại nhanh dành cho Tài khoản Mở khóa Full (Pro).'
+      );
+      return;
+    }
     if (activeLogosStack.length === 0) return;
     const label =
       presetNameInput.trim() ||
@@ -302,6 +350,12 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
   };
 
   const handleApplySavedPreset = (preset: LogoSetPreset) => {
+    if (!entitlements.canSaveLogoPresets) {
+      onRequestUpgrade(
+        'Tính năng tải Bộ Logo Mẫu Studio dành cho Tài khoản Mở khóa Full (Pro).'
+      );
+      return;
+    }
     const cloned = cloneLogoLayers(preset.logos);
     const affected = onBatchUpdateLogos(() => cloned);
     if (cloned[0]) setActiveLayerId(cloned[0].id);
@@ -430,14 +484,22 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
       {/* Add 1 or Multiple Logos Button */}
       <button
         type="button"
-        onClick={() => fileInputRef.current?.click()}
+        onClick={handleClickAddLogoButton}
         className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
       >
-        <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
+        {activeLogosStack.length >= entitlements.maxLogoLayers ? (
+          <Lock className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+        ) : (
+          <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
+        )}
         <span className="truncate">
           {activeLogosStack.length > 0
-            ? 'Thêm Logo khác vào cùng bức ảnh'
-            : 'Tải lên 1 hoặc nhiều Logo cùng lúc'}
+            ? activeLogosStack.length >= entitlements.maxLogoLayers
+              ? 'Mở khóa Full để ghép thêm Logo thứ 2+'
+              : 'Thêm Logo khác vào cùng bức ảnh'
+            : entitlements.isPro
+            ? 'Tải lên 1 hoặc nhiều Logo cùng lúc'
+            : 'Tải lên Logo cơ bản (1 lớp)'}
         </span>
       </button>
 

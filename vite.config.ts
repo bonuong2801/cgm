@@ -4,19 +4,27 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { Readable } from 'stream';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { handleAdminLicenses } from './api/admin/licenses.ts';
 import { POST as handleAiCull } from './api/ai/cull.ts';
+import { POST as handleCreateOrder } from './api/billing/create-order.ts';
+import { GET as handleOrderStatus } from './api/billing/order-status.ts';
+import { GET as handleBillingPlans } from './api/billing/plans.ts';
+import { POST as handleRedeemLicense } from './api/billing/redeem.ts';
+import { POST as handleVietQrWebhook } from './api/billing/vietqr-webhook.ts';
 import { GET as handleDriveCrawl } from './api/drive/crawl.ts';
 import { GET as handleDriveStream } from './api/drive/stream.ts';
 
-/**
- * Bridges Vite's local Node HTTP server directly to our Web-Standard `/api/*` handlers
- * so `npm run dev` runs both Frontend and Backend in a single process with zero Express bloat.
- */
 function localServerlessApiPlugin(): Plugin {
   const routes: Record<string, (req: Request) => Promise<Response>> = {
     '/api/drive/crawl': handleDriveCrawl,
     '/api/drive/stream': handleDriveStream,
     '/api/ai/cull': handleAiCull,
+    '/api/billing/plans': handleBillingPlans,
+    '/api/billing/redeem': handleRedeemLicense,
+    '/api/billing/create-order': handleCreateOrder,
+    '/api/billing/order-status': handleOrderStatus,
+    '/api/billing/vietqr-webhook': handleVietQrWebhook,
+    '/api/admin/licenses': handleAdminLicenses,
   };
 
   return {
@@ -90,7 +98,6 @@ function localServerlessApiPlugin(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  // Populate process.env from .env files in dev so /api handlers read GOOGLE_API_KEY & GEMINI_API_KEY
   const env = loadEnv(mode, process.cwd(), '');
   for (const [k, v] of Object.entries(env)) {
     if (process.env[k] === undefined) {

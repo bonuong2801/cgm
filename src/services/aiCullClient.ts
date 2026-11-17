@@ -1,4 +1,8 @@
-import { DriveMediaItem, StarRating } from '../types/media.ts';
+import type { DriveMediaItem, StarRating } from '../types/media.ts';
+import {
+  attachAuthToStreamUrl,
+  getAuthHeaders,
+} from '../lib/supabaseClient.ts';
 import { loadImageElement } from './imageProcessor.ts';
 
 export interface AiCullItemOutcome {
@@ -32,7 +36,7 @@ async function renderCompactBase64Jpeg(item: DriveMediaItem): Promise<string> {
 
   // Remote Drive photo: fetch via stream proxy or thumbnail blob so canvas is clean
   const fetchUrl = item.downloadUrl.startsWith('/api/')
-    ? item.downloadUrl
+    ? attachAuthToStreamUrl(item.downloadUrl)
     : item.gridThumbUrl;
   const res = await fetch(fetchUrl);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -96,7 +100,10 @@ export async function runSmartAiCullBatch(
 
     const res = await fetch('/api/ai/cull', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       signal,
       body: JSON.stringify({ photos: encodedBatch }),
     });

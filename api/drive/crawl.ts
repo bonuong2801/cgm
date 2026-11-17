@@ -1,3 +1,9 @@
+import {
+  ApiHttpError,
+  isServerSupabaseConfigured,
+  verifyRequestUser,
+} from '../_lib/supabaseAdmin.ts';
+
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const VALID_DRIVE_ID = /^[-\w]{15,120}$/;
@@ -261,6 +267,18 @@ export async function GET(request: Request): Promise<Response> {
       { error: 'Mã thư mục Google Drive không hợp lệ.' },
       400
     );
+  }
+
+  if (isServerSupabaseConfigured()) {
+    try {
+      await verifyRequestUser(request);
+    } catch (err: any) {
+      const status = err instanceof ApiHttpError ? err.status : 401;
+      return jsonResponse(
+        { error: err?.message || 'Vui lòng đăng nhập tài khoản.' },
+        status
+      );
+    }
   }
 
   const apiKey = getServerDriveApiKey();

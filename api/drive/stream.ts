@@ -1,3 +1,9 @@
+import {
+  ApiHttpError,
+  isServerSupabaseConfigured,
+  verifyRequestUser,
+} from '../_lib/supabaseAdmin.ts';
+
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 const VALID_DRIVE_ID = /^[-\w]{15,120}$/;
 
@@ -35,6 +41,23 @@ export async function GET(request: Request): Promise<Response> {
       status: 400,
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
+  }
+
+  if (isServerSupabaseConfigured()) {
+    try {
+      await verifyRequestUser(request, { allowQueryToken: true });
+    } catch (err: any) {
+      const status = err instanceof ApiHttpError ? err.status : 401;
+      return new Response(
+        JSON.stringify({
+          error: err?.message || 'Vui lòng đăng nhập tài khoản.',
+        }),
+        {
+          status,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        }
+      );
+    }
   }
 
   const apiKey = getServerDriveApiKey();

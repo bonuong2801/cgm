@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import {
   DEFAULT_EDIT_CONFIG,
   createLogoLayer,
@@ -7,6 +8,13 @@ import {
   type DriveMediaItem,
   type ExportOptions,
 } from '../src/types/media.ts';
+import type { UserProfile } from '../src/types/auth.ts';
+import {
+  FREE_MAX_EXPORT_FILES,
+  FREE_MAX_LOGO_LAYERS,
+  extractOrderCodeFromTransferContent,
+  getPlanEntitlements,
+} from '../src/utils/entitlements.ts';
 import {
   computeFrameGeometry,
   computeSmartLogoPlacement,
@@ -19,6 +27,11 @@ import {
   buildExportPlan,
   canBypassPhotoReencode,
 } from '../src/services/batchExporter.ts';
+import { POST as handleAiCull } from '../api/ai/cull.ts';
+import {
+  verifyAndParseBankWebhook,
+  verifyPayOsSignature,
+} from '../api/billing/vietqr-webhook.ts';
 import { GET as handleDriveCrawl } from '../api/drive/crawl.ts';
 import { GET as handleDriveStream } from '../api/drive/stream.ts';
 
@@ -27,7 +40,11 @@ async function runCoreChecks() {
   assert.equal(sanitizeFileToken('Lễ Đính Hôn 2026!'), 'Le_Dinh_Hon_2026');
   const f1 = resolveRelativeFolderPath('Root/Lễ 1/DSC_001.JPG');
   const f2 = resolveRelativeFolderPath('Root/Lố 1/DSC_001.JPG');
-  assert.notEqual(f1.folderId, f2.folderId, 'Vietnamese folder IDs must not collide');
+  assert.notEqual(
+    f1.folderId,
+    f2.folderId,
+    'Vietnamese folder IDs must not collide'
+  );
 
   const nestedA = resolveRelativeFolderPath('SuKien/Ngày 1/Khai Mạc/A.JPG');
   const nestedB = resolveRelativeFolderPath('SuKien/Ngày 2/Khai Mạc/A.JPG');
@@ -59,11 +76,21 @@ async function runCoreChecks() {
 
   // 3. Multi-Logo Layer Stack auto-corner distribution & custom drag placement
   const logo1 = createLogoLayer(
-    { dataUrl: 'data:image/png;base64,AA', fileName: 'org.png', naturalWidth: 400, naturalHeight: 200 },
+    {
+      dataUrl: 'data:image/png;base64,AA',
+      fileName: 'org.png',
+      naturalWidth: 400,
+      naturalHeight: 200,
+    },
     0
   );
   const logo2 = createLogoLayer(
-    { dataUrl: 'data:image/png;base64,BB', fileName: 'sponsor.png', naturalWidth: 300, naturalHeight: 300 },
+    {
+      dataUrl: 'data:image/png;base64,BB',
+      fileName: 'sponsor.png',
+      naturalWidth: 300,
+      naturalHeight: 300,
+    },
     1
   );
   const logo3 = createLogoLayer(
@@ -97,8 +124,14 @@ async function runCoreChecks() {
   );
 
   const pCustomClamped = computeSmartLogoPlacement(1000, 800, logo3);
-  assert.ok(pCustomClamped.x >= 0 && pCustomClamped.x + pCustomClamped.width <= 1000);
-  assert.ok(pCustomClamped.y >= 0 && pCustomClamped.y + pCustomClamped.height <= 800);
+  assert.ok(
+    pCustomClamped.x >= 0 &&
+      pCustomClamped.x + pCustomClamped.width <= 1000
+  );
+  assert.ok(
+    pCustomClamped.y >= 0 &&
+      pCustomClamped.y + pCustomClamped.height <= 800
+  );
 
   // 4. Warm/Cool Color Temperature
   assert.equal(computeWarmthTint(0), null);
@@ -141,12 +174,106 @@ async function runCoreChecks() {
     false
   );
 
-  const plan = buildExportPlan([baseItem, { ...baseItem, id: '2' }], baseExportOpts);
+  const plan = buildExportPlan(
+    [baseItem, { ...baseItem, id: '2' }],
+    baseExportOpts
+  );
   assert.equal(plan[0].subFolderName, 'Ngày 1/Khai Mạc');
   assert.equal(plan[0].targetFileName, 'CGM_Khai_Mac_001.jpg');
   assert.equal(plan[1].targetFileName, 'CGM_Khai_Mac_002.jpg');
 
-  // 6. Backend API Trust-Boundary Validation
+  // 6. Account Tiering & Entitlements (Free vs Lifetime Pro vs Active Pro vs Expired Pro)
+  const nowMs = Date.parse('2026-11-18T00:00:00Z');
+  const freeUser: UserProfile = {
+    id: 'u1',
+    email: 'free@studio.vn',
+    fullName: 'Free User',
+    avatarUrl: '',
+    tier: 'free',
+    proExpiresAt: null,
+    role: 'user',
+  };
+  const freeEnt = getPlanEntitlements(freeUser, nowMs);
+  assert.equal(freeEnt.isPro, false);
+  assert.equal(freeEnt.maxExportFilesPerRun, FREE_MAX_EXPORT_FILES);
+  assert.equal(freeEnt.maxLogoLayers, FREE_MAX_LOGO_LAYERS);
+  assert.equal(freeEnt.canFreeDragLogo, false);
+  assert.equal(freeEnt.canUseAiCull, false);
+  assert.equal(freeEnt.canExportOriginalOr4K, false);
+  assert.equal(freeEnt.canCustomBatchRename, false);
+
+  const lifetimePro: UserProfile = { ...freeUser, tier: 'pro', proExpiresAt: null };
+  const proEnt = getPlanEntitlements(lifetimePro, nowMs);
+  assert.equal(proEnt.isPro, true);
+  assert.equal(proEnt.maxExportFilesPerRun, Number.POSITIVE_INFINITY);
+  assert.equal(proEnt.maxLogoLayers, Number.POSITIVE_INFINITY);
+  assert.equal(proEnt.canFreeDragLogo, true);
+  assert.equal(proEnt.canUseAiCull, true);
+
+  const expiredPro: UserProfile = {
+    ...freeUser,
+    tier: 'pro',
+    proExpiresAt: '2026-11-01T00:00:00Z',
+  };
+  assert.equal(
+    getPlanEntitlements(expiredPro, nowMs).isPro,
+    false,
+    'Expired Pro subscription must automatically revert to Free entitlements'
+  );
+
+  // 7. VietQR Bank Memo Extraction & Webhook Verification (SePay + PayOS HMAC)
+  assert.equal(
+    extractOrderCodeFromTransferContent('MBVCB.948271.CGM8392140.CT TU NGUYEN VAN A'),
+    'CGM8392140'
+  );
+  assert.equal(
+    extractOrderCodeFromTransferContent('chuyen khoan cgm123456 nang cap'),
+    'CGM123456'
+  );
+  assert.equal(extractOrderCodeFromTransferContent('Chuyen tien an trua'), null);
+
+  // SePay Webhook Security Check
+  const badSepay = verifyAndParseBankWebhook(
+    new Headers({ Authorization: 'Apikey wrong_secret' }),
+    { transferType: 'in', transferAmount: 99000, content: 'CGM1234567' },
+    { sepaySecret: 'real_secret_123' }
+  );
+  assert.equal(badSepay.ok, false);
+
+  const okSepay = verifyAndParseBankWebhook(
+    new Headers({ Authorization: 'Apikey real_secret_123' }),
+    {
+      id: 9912,
+      transferType: 'in',
+      transferAmount: 599000,
+      content: 'IBFT CGM7654321 thanh toan',
+    },
+    { sepaySecret: 'real_secret_123' }
+  );
+  assert.equal(okSepay.ok, true);
+  if (okSepay.ok) {
+    assert.equal(okSepay.transfer?.orderCode, 'CGM7654321');
+    assert.equal(okSepay.transfer?.paidAmount, 599000);
+  }
+
+  // PayOS HMAC-SHA256 Signature Check
+  const payosKey = 'payos_test_checksum_secret';
+  const payosData = {
+    amount: 1290000,
+    description: 'Thanh toan CGM9876543',
+    orderCode: 9876543,
+    reference: 'FT26322',
+  };
+  const validSig = crypto
+    .createHmac('sha256', payosKey)
+    .update(
+      `amount=${payosData.amount}&description=${payosData.description}&orderCode=${payosData.orderCode}&reference=${payosData.reference}`
+    )
+    .digest('hex');
+  assert.equal(verifyPayOsSignature(payosData, validSig, payosKey), true);
+  assert.equal(verifyPayOsSignature(payosData, 'deadbeef', payosKey), false);
+
+  // 8. Backend API Trust-Boundary Validation
   const badCrawlRes = await handleDriveCrawl(
     new Request('http://localhost:3000/api/drive/crawl?folderId=short')
   );
@@ -157,7 +284,16 @@ async function runCoreChecks() {
   );
   assert.equal(badStreamRes.status, 400);
 
-  console.log('ALL CORE CHECKS PASSED SUCCESSFULLY');
+  const unauthAiRes = await handleAiCull(
+    new Request('http://localhost:3000/api/ai/cull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photos: [] }),
+    })
+  );
+  assert.equal(unauthAiRes.status, 401);
+
+  console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }
 
 runCoreChecks().catch((err) => {

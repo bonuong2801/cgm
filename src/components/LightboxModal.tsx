@@ -14,10 +14,13 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { DriveMediaItem, StarRating, getActiveLogos } from '../types/media.ts';
+import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 import { LiveEditedPhotoPreview } from './VirtualMediaGrid.tsx';
 
 interface LightboxModalProps {
   item: DriveMediaItem | null;
+  canFreeDragLogo: boolean;
+  onRequestUpgrade: (reason: string) => void;
   compareOriginal: boolean;
   onCompareOriginalChange: (comparing: boolean) => void;
   onRateItem: (itemId: string, rating: StarRating) => void;
@@ -41,6 +44,8 @@ const ZOOM_STEP = 0.35;
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({
   item,
+  canFreeDragLogo,
+  onRequestUpgrade,
   compareOriginal,
   onCompareOriginalChange,
   onRateItem,
@@ -388,7 +393,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             canStreamNativeVideo && !videoFallbackIframe ? (
               <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl flex items-center justify-center">
                 <video
-                  src={item.downloadUrl}
+                  src={attachAuthToStreamUrl(item.downloadUrl)}
                   controls
                   autoPlay
                   onError={() => setVideoFallbackIframe(true)}
@@ -426,7 +431,19 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 showOriginal={compareOriginal}
                 activeLogoId={selectedLogoId}
                 onSelectLogoLayer={setSelectedLogoId}
-                onInteractiveMoveLogo={zoom === 1 ? onMoveLogoLayer : undefined}
+                onInteractiveMoveLogo={
+                  zoom === 1
+                    ? (logoId, xPct, yPct) => {
+                        if (!canFreeDragLogo) {
+                          onRequestUpgrade(
+                            'Tính năng kéo-thả đặt tọa độ Logo tự do trên ảnh dành cho Tài khoản Mở khóa Full (Pro).'
+                          );
+                          return;
+                        }
+                        onMoveLogoLayer(logoId, xPct, yPct);
+                      }
+                    : undefined
+                }
                 className="max-h-[78vh] max-w-[82vw] rounded-lg shadow-2xl border border-zinc-800"
               />
             </div>

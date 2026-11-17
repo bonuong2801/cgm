@@ -5,6 +5,7 @@ import {
   LogoLayer,
   cloneLogoLayers,
 } from '../types/media.ts';
+import { getAuthHeaders } from '../lib/supabaseClient.ts';
 
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -63,7 +64,7 @@ export function buildOptimizedThumbnailUrls(
 }
 
 function getFallbackClientDriveApiKey(): string {
-  const envKey = import.meta.env.VITE_GOOGLE_API_KEY;
+  const envKey = (import.meta as any).env?.VITE_GOOGLE_API_KEY;
   if (
     envKey &&
     typeof envKey === 'string' &&
@@ -143,7 +144,8 @@ export async function crawlGoogleDriveFolder(
 
   try {
     const res = await fetch(
-      `/api/drive/crawl?folderId=${encodeURIComponent(rootFolderId)}`
+      `/api/drive/crawl?folderId=${encodeURIComponent(rootFolderId)}`,
+      { headers: getAuthHeaders() }
     );
     const contentType = res.headers.get('content-type') || '';
 

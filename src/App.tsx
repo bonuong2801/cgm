@@ -5,7 +5,10 @@ import React, {
   useEffect,
   useRef,
 } from 'react';
-import { AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext.tsx';
+import { AuthGateScreen } from './components/AuthGateScreen.tsx';
+import { UpgradeModal } from './components/UpgradeModal.tsx';
 import {
   CropArea,
   CullingStatus,
@@ -48,6 +51,34 @@ import { CropModal } from './components/CropModal.tsx';
 import { ExportModal } from './components/ExportModal.tsx';
 
 export default function App() {
+  const { isConfigured, isLoadingAuth, session } = useAuth();
+
+  if (isLoadingAuth) {
+    return (
+      <div className="h-screen w-screen bg-zinc-950 text-zinc-300 flex flex-col items-center justify-center gap-3 select-none">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+        <span className="text-xs text-zinc-400">
+          Đang xác thực phiên đăng nhập CGM Studio...
+        </span>
+      </div>
+    );
+  }
+
+  if (!isConfigured || !session) {
+    return <AuthGateScreen isSupabaseConfigured={isConfigured} />;
+  }
+
+  return <StudioWorkspace />;
+}
+
+function StudioWorkspace() {
+  const {
+    profile,
+    entitlements,
+    refreshProfile,
+    applyUpdatedProfile,
+    signOut,
+  } = useAuth();
   const driveInputRef = useRef<HTMLInputElement | null>(null);
   const itemsRef = useRef<DriveMediaItem[]>([]);
   const thumbCancelRef = useRef<(() => void) | null>(null);
@@ -90,6 +121,13 @@ export default function App() {
   const [lightboxItemId, setLightboxItemId] = useState<string | null>(null);
   const [cropModalItemId, setCropModalItemId] = useState<string | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState<boolean>(false);
+  const [upgradeReason, setUpgradeReason] = useState<string | null>(null);
+
+  const handleOpenUpgradeModal = useCallback((reason?: string) => {
+    setUpgradeReason(reason || null);
+    setIsUpgradeModalOpen(true);
+  }, []);
 
   // Undo History for Soft-Delete Culling
   const [rejectedHistoryIds, setRejectedHistoryIds] = useState<string[]>([]);
@@ -885,7 +923,7 @@ export default function App() {
       }
     },
     onToggleLightbox: () => {
-      if (cropModalItemId || isExportModalOpen) return;
+      if (cropModalItemId || isExportModalOpen || isUpgradeModalOpen) return;
       if (lightboxItemId) {
         setLightboxItemId(null);
       } else if (selectedItemId) {
@@ -893,7 +931,9 @@ export default function App() {
       }
     },
     onCloseModal: () => {
-      if (cropModalItemId) {
+      if (isUpgradeModalOpen) {
+        setIsUpgradeModalOpen(false);
+      } else if (cropModalItemId) {
         setCropModalItemId(null);
       } else if (lightboxItemId) {
         setLightboxItemId(null);
@@ -903,7 +943,10 @@ export default function App() {
     },
     onCompareOriginalChange: setCompareOriginal,
     isAnyModalOpen: Boolean(
-      cropModalItemId || lightboxItemId || isExportModalOpen
+      cropModalItemId ||
+        lightboxItemId ||
+        isExportModalOpen ||
+        isUpgradeModalOpen
     ),
   });
 
@@ -947,6 +990,10 @@ export default function App() {
     <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
       {/* Top Studio Bar */}
       <TopBar
+        profile={profile}
+        entitlements={entitlements}
+        onOpenUpgradeModal={handleOpenUpgradeModal}
+        onSignOut={signOut}
         inputRef={driveInputRef}
         driveUrlInput={driveUrlInput}
         onDriveUrlChange={setDriveUrlInput}
@@ -1056,6 +1103,8 @@ export default function App() {
 
         {isRightInspectorOpen && (
           <EditorInspector
+            entitlements={entitlements}
+            onRequestUpgrade={handleOpenUpgradeModal}
             selectedItem={selectedItem}
             checkedCount={checkedItemIds.size}
             keptPhotoCount={keptPhotoCount}
@@ -1083,6 +1132,8 @@ export default function App() {
       {/* Full-Screen Lightbox with Native Video Seek & Multi-Logo Dragging */}
       <LightboxModal
         item={lightboxItem}
+        canFreeDragLogo={entitlements.canFreeDragLogo}
+        onRequestUpgrade={handleOpenUpgradeModal}
         compareOriginal={compareOriginal}
         onCompareOriginalChange={setCompareOriginal}
         onRateItem={handleRateItem}
@@ -1106,11 +1157,29 @@ export default function App() {
       {/* Batch Export & Custom Renaming Modal */}
       <ExportModal
         isOpen={isExportModalOpen}
+        entitlements={entitlements}
+        onRequestUpgrade={handleOpenUpgradeModal}
         onClose={() => setIsExportModalOpen(false)}
         allItems={items}
         checkedItemIds={checkedItemIds}
         selectedFolderId={selectedFolderId}
         selectedFolderName={selectedFolderName}
+      />
+
+      {/* Pro Account Unlock Modal (Automatic VietQR + License Key + Admin Generator) */}
+      <UpgradeModal
+        isOpen={isUpgradeModalOpen}
+        reasonBanner={upgradeReason}
+        profile={profile}
+        onClose={() => setIsUpgradeModalOpen(false)}
+        onUnlockedSuccess={(updatedProfile, msg) => {
+          if (updatedProfile) {
+            applyUpdatedProfile(updatedProfile);
+          } else {
+            refreshProfile();
+          }
+          showToast(msg);
+        }}
       />
     </div>
   );

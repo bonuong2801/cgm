@@ -1,3 +1,8 @@
+import {
+  ApiHttpError,
+  verifyRequestUser,
+} from '../_lib/supabaseAdmin.ts';
+
 const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 const MAX_BATCH_PHOTOS = 12;
@@ -41,6 +46,25 @@ function jsonResponse(body: unknown, status = 200): Response {
  * bad exposure, or accidental shots, returning structured Vietnamese feedback.
  */
 export async function POST(request: Request): Promise<Response> {
+  try {
+    const { entitlements } = await verifyRequestUser(request);
+    if (!entitlements.canUseAiCull) {
+      return jsonResponse(
+        {
+          error:
+            'Tính năng AI lọc ảnh lỗi & chấm sao tự động chỉ dành cho Tài khoản Mở khóa Full (Pro).',
+          code: 'PRO_REQUIRED',
+        },
+        403
+      );
+    }
+  } catch (err: any) {
+    if (err instanceof ApiHttpError) {
+      return jsonResponse({ error: err.message, code: err.code }, err.status);
+    }
+    return jsonResponse({ error: 'Vui lòng đăng nhập tài khoản.' }, 401);
+  }
+
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     return jsonResponse(
