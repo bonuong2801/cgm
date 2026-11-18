@@ -31,13 +31,17 @@ export function jsonApi(
   });
 }
 
+const DEFAULT_SUPABASE_URL = 'https://aewkgzaatrtffcdxxaht.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY =
+  'sb_publishable_7Dbv0Ehlnf8HxQo7pQuUDQ_fjePtZbL';
+
 function getSupabaseUrl(): string {
   const raw = (
     process.env.SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
-    ''
+    DEFAULT_SUPABASE_URL
   ).trim();
-  if (!raw || raw.includes('your-project-id')) return '';
+  if (!raw || raw.includes('your-project-id')) return DEFAULT_SUPABASE_URL;
   return raw;
 }
 
@@ -51,9 +55,11 @@ function getPublishableKey(): string {
   const raw = (
     process.env.SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
-    ''
+    DEFAULT_SUPABASE_PUBLISHABLE_KEY
   ).trim();
-  if (!raw || raw === 'your_supabase_anon_public_key') return '';
+  if (!raw || raw === 'your_supabase_anon_public_key') {
+    return DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+  }
   return raw;
 }
 

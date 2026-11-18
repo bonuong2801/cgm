@@ -1,9 +1,16 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+// Public Supabase project URL & publishable client key (safe in client bundles; protected by Postgres RLS)
+const DEFAULT_SUPABASE_URL = 'https://aewkgzaatrtffcdxxaht.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY =
+  'sb_publishable_7Dbv0Ehlnf8HxQo7pQuUDQ_fjePtZbL';
+
 const metaEnv = (import.meta as any).env || {};
-export const supabaseProjectUrl = String(metaEnv.VITE_SUPABASE_URL || '').trim();
+export const supabaseProjectUrl = String(
+  metaEnv.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL
+).trim();
 export const supabasePublishableKey = String(
-  metaEnv.VITE_SUPABASE_ANON_KEY || ''
+  metaEnv.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY
 ).trim();
 
 export const isClientSupabaseConfigured = Boolean(
