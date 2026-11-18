@@ -10,17 +10,17 @@ import { useAuth } from './contexts/AuthContext.tsx';
 import { AuthGateScreen } from './components/AuthGateScreen.tsx';
 import { UpgradeModal } from './components/UpgradeModal.tsx';
 import {
-  CropArea,
-  CullingStatus,
-  DriveFolder,
-  DriveMediaItem,
-  EditConfig,
-  LogoLayer,
-  LogoSetPreset,
-  MediaTypeFilter,
-  QuickFilterOption,
-  SortByOption,
-  StarRating,
+  type CropArea,
+  type CullingStatus,
+  type DriveFolder,
+  type DriveMediaItem,
+  type EditConfig,
+  type LogoLayer,
+  type LogoSetPreset,
+  type MediaTypeFilter,
+  type QuickFilterOption,
+  type SortByOption,
+  type StarRating,
   cloneLogoLayers,
   isPhotoEdited,
 } from './types/media.ts';
@@ -45,7 +45,7 @@ import { FolderSidebar } from './components/FolderSidebar.tsx';
 import { VirtualMediaGrid } from './components/VirtualMediaGrid.tsx';
 import {
   EditorInspector,
-  LogoApplyScope,
+  type LogoApplyScope,
 } from './components/EditorInspector.tsx';
 import { LightboxModal } from './components/LightboxModal.tsx';
 import { CropModal } from './components/CropModal.tsx';

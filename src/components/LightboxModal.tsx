@@ -13,7 +13,11 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { DriveMediaItem, StarRating, getActiveLogos } from '../types/media.ts';
+import {
+  type DriveMediaItem,
+  type StarRating,
+  getActiveLogos,
+} from '../types/media.ts';
 import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 import { LiveEditedPhotoPreview } from './VirtualMediaGrid.tsx';
 

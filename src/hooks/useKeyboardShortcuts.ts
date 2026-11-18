@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { StarRating } from '../types/media.ts';
+import type { StarRating } from '../types/media.ts';
 
 export interface KeyboardShortcutHandlers {
   onPrevItem: () => void;

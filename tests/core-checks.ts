@@ -15,6 +15,7 @@ import {
   extractOrderCodeFromTransferContent,
   getPlanEntitlements,
 } from '../src/utils/entitlements.ts';
+import { generateGoogleNoncePair } from '../src/lib/supabaseClient.ts';
 import {
   computeFrameGeometry,
   computeSmartLogoPlacement,
@@ -324,6 +325,14 @@ async function runCoreChecks() {
   assert.equal(
     toUserFriendlyError('Mã kích hoạt đã hết lượt sử dụng.'),
     'Mã kích hoạt đã hết lượt sử dụng.'
+  );
+
+  // 10. Google Identity Services Nonce Pair (SHA-256 hex match required by Supabase signInWithIdToken)
+  const { nonce, hashedNonce } = await generateGoogleNoncePair();
+  assert.equal(nonce.length, 48);
+  assert.equal(
+    hashedNonce,
+    crypto.createHash('sha256').update(nonce).digest('hex')
   );
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');

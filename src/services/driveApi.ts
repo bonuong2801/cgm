@@ -1,8 +1,8 @@
 import {
   DEFAULT_EDIT_CONFIG,
-  DriveFolder,
-  DriveMediaItem,
-  LogoLayer,
+  type DriveFolder,
+  type DriveMediaItem,
+  type LogoLayer,
   cloneLogoLayers,
 } from '../types/media.ts';
 import { getAuthHeaders } from '../lib/supabaseClient.ts';

@@ -1,7 +1,7 @@
 import {
-  EditConfig,
-  ExportMaxDimension,
-  ImageExportFormat,
+  type EditConfig,
+  type ExportMaxDimension,
+  type ImageExportFormat,
   getActiveLogos,
 } from '../types/media.ts';
 import {

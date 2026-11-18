@@ -28,13 +28,13 @@ import {
 import type { PlanEntitlements } from '../types/auth.ts';
 import {
   DEFAULT_EDIT_CONFIG,
-  DriveMediaItem,
-  EditConfig,
-  LogoAnchorPosition,
-  LogoLayer,
-  LogoPosition,
-  LogoSetPreset,
-  StarRating,
+  type DriveMediaItem,
+  type EditConfig,
+  type LogoAnchorPosition,
+  type LogoLayer,
+  type LogoPosition,
+  type LogoSetPreset,
+  type StarRating,
   cloneLogoLayers,
   createLogoLayer,
 } from '../types/media.ts';

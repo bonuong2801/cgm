@@ -19,9 +19,9 @@ import {
   X,
 } from 'lucide-react';
 import {
-  DriveMediaItem,
-  QuickFilterOption,
-  SortByOption,
+  type DriveMediaItem,
+  type QuickFilterOption,
+  type SortByOption,
   getActiveLogos,
   isPhotoEdited,
 } from '../types/media.ts';

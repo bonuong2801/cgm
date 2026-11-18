@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import Cropper, { Area, Point } from 'react-easy-crop';
+import Cropper, { type Area, type Point } from 'react-easy-crop';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
-import { CropArea, DriveMediaItem } from '../types/media.ts';
+import type { CropArea, DriveMediaItem } from '../types/media.ts';
 
 interface CropModalProps {
   item: DriveMediaItem | null;

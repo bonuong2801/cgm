@@ -8,7 +8,7 @@ import {
   Layers,
   Trash2,
 } from 'lucide-react';
-import {
+import type {
   CullingStatus,
   DriveFolder,
   DriveMediaItem,

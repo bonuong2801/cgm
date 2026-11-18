@@ -86,20 +86,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     let active = true;
 
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!active) return;
-      const initialSession = data.session;
-      setActiveAccessToken(initialSession?.access_token);
-      setSession(initialSession);
-      await fetchProfileForSession(initialSession);
-      if (active) setIsLoadingAuth(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(async ({ data }) => {
+        if (!active) return;
+        const initialSession = data.session;
+        setActiveAccessToken(initialSession?.access_token);
+        setSession(initialSession);
+        await fetchProfileForSession(initialSession);
+        if (
+          initialSession &&
+          typeof window !== 'undefined' &&
+          window.location.hash.includes('access_token=')
+        ) {
+          window.history.replaceState(
+            null,
+            '',
+            window.location.pathname + window.location.search
+          );
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setIsLoadingAuth(false);
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange(
       (_event, nextSession) => {
         setActiveAccessToken(nextSession?.access_token);
         setSession(nextSession);
-        fetchProfileForSession(nextSession);
+        fetchProfileForSession(nextSession).catch(() => {});
+        if (
+          nextSession &&
+          typeof window !== 'undefined' &&
+          window.location.hash.includes('access_token=')
+        ) {
+          window.history.replaceState(
+            null,
+            '',
+            window.location.pathname + window.location.search
+          );
+        }
       }
     );
 

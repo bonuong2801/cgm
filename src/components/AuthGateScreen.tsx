@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -13,6 +13,8 @@ import {
   UserPlus,
 } from 'lucide-react';
 import {
+  generateGoogleNoncePair,
+  googleWebClientId,
   supabase,
   supabaseProjectUrl,
   supabasePublishableKey,
@@ -20,6 +22,32 @@ import {
 import { toUserFriendlyError } from '../utils/userMessages.ts';
 
 type AuthTab = 'login' | 'register' | 'forgot';
+
+const GIS_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
+
+function loadGoogleIdentityScript(): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  if ((window as any).google?.accounts?.id) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${GIS_SCRIPT_SRC}"]`
+    );
+    if (existing) {
+      existing.addEventListener('load', () => resolve(true), { once: true });
+      existing.addEventListener('error', () => resolve(false), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = GIS_SCRIPT_SRC;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+}
 
 export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
   isSupabaseConfigured,
@@ -30,8 +58,10 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
   const [fullName, setFullName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState<boolean>(false);
+  const [gisRendered, setGisRendered] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const gisContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabaseProjectUrl || !supabasePublishableKey) {
@@ -53,6 +83,80 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
     };
   }, [isSupabaseConfigured]);
 
+  // Direct Google Identity Services (GIS) popup -> signInWithIdToken
+  // Avoids redirecting to `*.supabase.co`, showing CGM Studio / web domain instead!
+  useEffect(() => {
+    if (!googleEnabled || !googleWebClientId || !supabase) return;
+    let cancelled = false;
+
+    const mountGooglePopupButton = async () => {
+      const loaded = await loadGoogleIdentityScript();
+      if (cancelled || !loaded) return;
+
+      const googleId = (window as any).google?.accounts?.id;
+      const container = gisContainerRef.current;
+      if (!googleId || !container) return;
+
+      const { nonce, hashedNonce } = await generateGoogleNoncePair();
+      if (cancelled) return;
+
+      googleId.initialize({
+        client_id: googleWebClientId,
+        nonce: hashedNonce,
+        ux_mode: 'popup',
+        context: 'signin',
+        use_fedcm_for_prompt: true,
+        callback: async (response: { credential?: string }) => {
+          if (!response?.credential || !supabase) return;
+          setErrorMsg(null);
+          setInfoMsg(null);
+          setSubmitting(true);
+          try {
+            const { error } = await supabase.auth.signInWithIdToken({
+              provider: 'google',
+              token: response.credential,
+              nonce,
+            });
+            if (error) throw error;
+          } catch (err: any) {
+            setErrorMsg(
+              toUserFriendlyError(
+                err,
+                'Không thể đăng nhập bằng Google lúc này. Vui lòng thử lại hoặc dùng Email bên dưới.'
+              )
+            );
+            setSubmitting(false);
+            // Refresh nonce so immediate retry succeeds cleanly
+            mountGooglePopupButton();
+          }
+        },
+      });
+
+      const targetWidth = Math.min(
+        400,
+        Math.max(250, Math.floor(container.clientWidth || 360))
+      );
+      container.innerHTML = '';
+      googleId.renderButton(container, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'continue_with',
+        shape: 'rectangular',
+        logo_alignment: 'left',
+        locale: 'vi',
+        width: targetWidth,
+      });
+      setGisRendered(true);
+    };
+
+    mountGooglePopupButton();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [googleEnabled]);
+
   if (!isSupabaseConfigured || !supabase) {
     return (
       <div className="min-h-screen w-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6 select-none">
@@ -73,7 +177,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
     );
   }
 
-  const handleGoogleSignIn = async () => {
+  const handleFallbackGoogleSignIn = async () => {
     if (!supabase) return;
     setErrorMsg(null);
     setInfoMsg(null);
@@ -252,32 +356,44 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
             </button>
           </div>
 
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={handleGoogleSignIn}
-            className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-900 font-semibold text-xs flex items-center justify-center gap-2.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill="#4285F4"
-                d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.54-5.17 3.54-8.97z"
-              />
-              <path
-                fill="#34A853"
-                d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96h-4.01v3.14C3.515 21.3 7.615 24 12.255 24z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.535 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62h-4.01C.705 8.24.255 10.06.255 12s.45 3.76 1.27 5.38l4.01-3.14z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0 7.615 0 3.515 2.7 1.525 6.62l4.01 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
-              />
-            </svg>
-            <span>Tiếp tục nhanh bằng tài khoản Google</span>
-          </button>
+          {/* Direct Google Identity Services Popup Button (hides *.supabase.co) */}
+          <div className="w-full flex flex-col items-center">
+            <div
+              ref={gisContainerRef}
+              className={`w-full flex justify-center overflow-hidden rounded-xl ${
+                gisRendered ? 'min-h-[40px]' : 'hidden'
+              }`}
+            />
+
+            {!gisRendered && (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleFallbackGoogleSignIn}
+                className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-900 font-semibold text-xs flex items-center justify-center gap-2.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#4285F4"
+                    d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.54-5.17 3.54-8.97z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96h-4.01v3.14C3.515 21.3 7.615 24 12.255 24z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.535 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62h-4.01C.705 8.24.255 10.06.255 12s.45 3.76 1.27 5.38l4.01-3.14z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0 7.615 0 3.515 2.7 1.525 6.62l4.01 3.14c.95-2.85 3.6-4.96 6.72-4.96z"
+                  />
+                </svg>
+                <span>Tiếp tục nhanh bằng tài khoản Google</span>
+              </button>
+            )}
+          </div>
 
           <div className="relative flex items-center justify-center">
             <div className="border-t border-zinc-800 w-full" />

@@ -13,7 +13,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { PlanEntitlements } from '../types/auth.ts';
-import {
+import type {
   DriveMediaItem,
   ExportFailedItem,
   ExportMaxDimension,
@@ -25,7 +25,7 @@ import {
   RenameMode,
 } from '../types/media.ts';
 import {
-  PlannedExportTask,
+  type PlannedExportTask,
   buildExportPlan,
   formatExportFileName,
   runBatchExportTasks,
@@ -263,7 +263,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         exportMethodLabel:
           err?.name === 'AbortError'
             ? 'Đã hủy tiến trình xuất file.'
-            : err?.message || 'Đã dừng xuất file.',
+            : toUserFriendlyError(err, 'Đã dừng xuất file.'),
       }));
       setHasFinishedRun(true);
     } finally {
