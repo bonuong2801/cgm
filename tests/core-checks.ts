@@ -22,6 +22,7 @@ import {
   sanitizeFileToken,
   sanitizeFolderNameForDisk,
 } from '../src/utils/mediaMath.ts';
+import { toUserFriendlyError } from '../src/utils/userMessages.ts';
 import { resolveRelativeFolderPath } from '../src/services/localFileLoader.ts';
 import {
   buildExportPlan,
@@ -292,6 +293,38 @@ async function runCoreChecks() {
     })
   );
   assert.equal(unauthAiRes.status, 401);
+
+  // 9. Customer-Friendly Error Message Sanitizer (no developer jargon leaked to end-users)
+  assert.equal(
+    toUserFriendlyError('Invalid login credentials'),
+    'Email hoặc mật khẩu không chính xác.'
+  );
+  assert.equal(
+    toUserFriendlyError('User already registered'),
+    'Email này đã có tài khoản. Vui lòng chuyển sang mục Đăng nhập.'
+  );
+  assert.equal(
+    toUserFriendlyError(new TypeError('Failed to fetch')),
+    'Kết nối mạng bị gián đoạn. Vui lòng kiểm tra Internet và thử lại.'
+  );
+  assert.equal(
+    toUserFriendlyError(
+      'Chưa cấu hình GEMINI_API_KEY trên Server (.env)',
+      'Tính năng AI lọc ảnh hiện đang gặp sự cố hoặc tạm bảo trì. Vui lòng thử lại sau ít phút.'
+    ),
+    'Tính năng AI lọc ảnh hiện đang gặp sự cố hoặc tạm bảo trì. Vui lòng thử lại sau ít phút.'
+  );
+  assert.equal(
+    toUserFriendlyError(
+      'Supabase RPC error HTTP 503 Worker OffscreenCanvas',
+      'Hệ thống đang tạm gián đoạn.'
+    ),
+    'Hệ thống đang tạm gián đoạn.'
+  );
+  assert.equal(
+    toUserFriendlyError('Mã kích hoạt đã hết lượt sử dụng.'),
+    'Mã kích hoạt đã hết lượt sử dụng.'
+  );
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }

@@ -51,7 +51,10 @@ export async function POST(request: Request): Promise<Response> {
       return jsonApi({ error: err.message, code: err.code }, err.status);
     }
     return jsonApi(
-      { error: err?.message || 'Lỗi máy chủ khi kích hoạt mã.' },
+      {
+        error:
+          'Hệ thống kích hoạt mã đang tạm gián đoạn. Vui lòng thử lại sau ít phút.',
+      },
       500
     );
   }

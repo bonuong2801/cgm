@@ -85,7 +85,13 @@ export async function POST(request: Request): Promise<Response> {
     if (err instanceof ApiHttpError) {
       return jsonApi({ error: err.message, code: err.code }, err.status);
     }
-    return jsonApi({ error: err?.message || 'Lỗi tạo đơn VietQR.' }, 500);
+    return jsonApi(
+      {
+        error:
+          'Không thể tạo mã thanh toán QR lúc này. Vui lòng thử lại hoặc dùng Mã Kích Hoạt.',
+      },
+      500
+    );
   }
 }
 

@@ -235,14 +235,14 @@ export const TopBar: React.FC<TopBarProps> = ({
               onClick={() => {
                 if (!entitlements.canUseAiCull) {
                   onOpenUpgradeModal(
-                    'Tính năng Gemini AI tự động lọc ảnh nhắm mắt, rung nhòe & chấm sao dành riêng cho Tài khoản Mở khóa Full (Pro).'
+                    'Tính năng AI tự động lọc ảnh nhắm mắt, rung nhòe & chấm sao dành riêng cho Tài khoản Mở khóa Full (Pro).'
                   );
                 } else {
                   onRunAiCull();
                 }
               }}
               className="px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors hidden lg:flex items-center gap-1 whitespace-nowrap cursor-pointer"
-              title="Dùng Gemini AI phát hiện ảnh nhắm mắt, rung nhòe"
+              title="Dùng AI phát hiện ảnh nhắm mắt, rung nhòe"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
               <span className="hidden 2xl:inline">AI lọc ảnh</span>
@@ -257,7 +257,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={onClearAllWorkspace}
             className="p-1.5 text-xs font-medium text-zinc-400 hover:text-rose-300 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors cursor-pointer"
-            title="Xóa danh sách hiện tại & giải phóng RAM"
+            title="Làm mới danh sách ảnh hiện tại"
             aria-label="Làm mới không gian làm việc"
           >
             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />

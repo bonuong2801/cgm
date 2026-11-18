@@ -876,7 +876,10 @@ function StudioWorkspace() {
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         setErrorMessage(
-          err?.message || 'Không thể chạy AI lọc ảnh lỗi.'
+          toUserFriendlyError(
+            err,
+            'Tính năng AI lọc ảnh hiện đang gặp sự cố hoặc tạm bảo trì. Vui lòng thử lại sau ít phút.'
+          )
         );
       }
     } finally {

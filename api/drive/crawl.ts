@@ -410,7 +410,9 @@ export async function GET(request: Request): Promise<Response> {
     return jsonResponse(
       {
         error:
-          err?.message || 'Lỗi không xác định khi quét thư mục Google Drive.',
+          err?.message && !/\b(fetch|network|socket|econn|undici)\b/i.test(err.message)
+            ? err.message
+            : 'Không thể kết nối đến Google Drive lúc này. Vui lòng kiểm tra lại đường liên kết hoặc thử lại sau.',
       },
       502
     );

@@ -9,6 +9,7 @@ import {
   sanitizeFileToken,
   sanitizeFolderNameForDisk,
 } from '../utils/mediaMath.ts';
+import { toUserFriendlyError } from '../utils/userMessages.ts';
 import { processPhotoToBlob } from './imageProcessor.ts';
 import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 
@@ -343,8 +344,10 @@ export async function runBatchExportTasks(
           failedItems.push({
             item: task.item,
             targetFileName: task.targetFileName,
-            errorMessage:
-              err?.message || 'Lỗi không xác định khi xử lý hoặc ghi file.',
+            errorMessage: toUserFriendlyError(
+              err,
+              'Không thể xử lý hoặc lưu tệp này. Vui lòng thử lại.'
+            ),
           });
         } finally {
           processedCount += 1;
@@ -425,7 +428,10 @@ export async function runBatchExportTasks(
           failedItems.push({
             item: task.item,
             targetFileName: task.targetFileName,
-            errorMessage: err?.message || 'Lỗi khi xử lý đóng gói file.',
+            errorMessage: toUserFriendlyError(
+              err,
+              'Không thể đóng gói tệp này. Vui lòng thử lại.'
+            ),
           });
         } finally {
           processedCount += 1;

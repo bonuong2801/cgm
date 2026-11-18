@@ -334,8 +334,8 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               <ul className="space-y-1 text-[11px] text-zinc-200">
                 <li>• Xuất không giới hạn hàng nghìn ảnh &amp; video</li>
                 <li>• Ghép Đa Logo không giới hạn + Kéo-thả tự do</li>
-                <li>• Xuất Độ phân giải gốc 100%, 4K, PNG, giữ EXIF</li>
-                <li>• Mở khóa Gemini AI lọc ảnh lỗi &amp; đổi tên mẫu</li>
+                <li>• Xuất Độ phân giải gốc 100%, chuẩn in 4K &amp; ảnh PNG</li>
+                <li>• Mở khóa AI lọc ảnh lỗi &amp; đổi tên hàng loạt</li>
               </ul>
             </div>
           </div>

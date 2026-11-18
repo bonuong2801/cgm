@@ -31,6 +31,7 @@ import {
   runBatchExportTasks,
   sanitizeFolderNameForDisk,
 } from '../services/batchExporter.ts';
+import { toUserFriendlyError } from '../utils/userMessages.ts';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -423,7 +424,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               onClick={() => {
                 if (!entitlements.canIncludeVideosInExport) {
                   onRequestUpgrade(
-                    'Tính năng xuất kèm toàn bộ Video gốc dung lượng lớn bằng luồng Zero-RAM dành cho Tài khoản Mở khóa Full (Pro).'
+                    'Tính năng xuất kèm toàn bộ Video giữ nguyên chất lượng gốc dành cho Tài khoản Mở khóa Full (Pro).'
                   );
                   return;
                 }
@@ -446,7 +447,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     )}
                   </div>
                   <div className="text-[11px] text-zinc-400 mt-0.5">
-                    Truyền luồng Zero-RAM thẳng vào ổ cứng
+                    Tải nhanh, giữ trọn chất lượng gốc
                   </div>
                 </div>
               </div>
@@ -458,7 +459,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               onClick={() => {
                 if (!entitlements.canExportOriginalOr4K) {
                   onRequestUpgrade(
-                    'Tính năng giữ nguyên byte gốc 100% & bảo toàn thông số EXIF máy ảnh dành cho Tài khoản Mở khóa Full (Pro).'
+                    'Tính năng giữ nguyên 100% chất lượng và thông tin ảnh gốc dành cho Tài khoản Mở khóa Full (Pro).'
                   );
                   return;
                 }
@@ -479,13 +480,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-zinc-200 flex items-center gap-1">
                     <Zap className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span>Giữ byte gốc &amp; EXIF</span>
+                    <span>Giữ nguyên chất lượng gốc</span>
                     {!entitlements.canExportOriginalOr4K && (
                       <Lock className="w-3 h-3 text-amber-400 shrink-0" />
                     )}
                   </div>
                   <div className="text-[11px] text-zinc-400 mt-0.5">
-                    Tăng tốc gấp 10 lần cho ảnh mộc
+                    Tăng tốc gấp 10 lần cho ảnh chưa chỉnh sửa
                   </div>
                 </div>
               </div>
@@ -520,7 +521,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                         !entitlements.canExportPngOrMaxQuality
                       ) {
                         onRequestUpgrade(
-                          'Xuất ảnh định dạng PNG không nén (Lossless) dành cho Tài khoản Mở khóa Full (Pro).'
+                          'Xuất ảnh định dạng PNG sắc nét cao dành cho Tài khoản Mở khóa Full (Pro).'
                         );
                         return;
                       }
@@ -634,7 +635,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   onClick={() => {
                     if (m.proOnly && !entitlements.canCustomBatchRename) {
                       onRequestUpgrade(
-                        'Tính năng Đổi tên file hàng loạt theo mẫu thương hiệu riêng ({prefix}_{folder}_{index3}) dành cho Tài khoản Mở khóa Full (Pro).'
+                        'Tính năng Đổi tên file hàng loạt theo mẫu thương hiệu riêng dành cho Tài khoản Mở khóa Full (Pro).'
                       );
                       return;
                     }
@@ -789,7 +790,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   {progress.isRunning ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                      <span>Đang xử lý bằng 4 luồng Worker...</span>
+                      <span>Đang xử lý và xuất file hàng loạt...</span>
                     </>
                   ) : progress.failedItems.length === 0 ? (
                     <>

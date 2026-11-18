@@ -150,7 +150,9 @@ self.onmessage = async (event: MessageEvent<WorkerRenderRequest>) => {
     const msg: WorkerRenderResponse = {
       jobId: req.jobId,
       ok: false,
-      error: err?.message || 'Lỗi xử lý ảnh trong Worker.',
+      error:
+        err?.message ||
+        'Không thể xử lý bức ảnh này. Vui lòng kiểm tra lại định dạng ảnh.',
     };
     self.postMessage(msg);
   }

@@ -84,7 +84,8 @@ function localServerlessApiPlugin(): Plugin {
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               res.end(
                 JSON.stringify({
-                  error: err?.message || 'Lỗi máy chủ nội bộ (/api).',
+                  error:
+                    'Hệ thống đang tạm thời gián đoạn. Vui lòng thử lại sau ít phút.',
                 })
               );
             } else {

@@ -143,7 +143,7 @@ function ensureWorkerPool(size = 4): PoolSlot[] | null {
         if (res.ok && res.blob) {
           entry.resolve(res.blob);
         } else {
-          entry.reject(new Error(res.error || 'Lỗi xuất ảnh trong Worker.'));
+          entry.reject(new Error(res.error || 'Không thể xử lý bức ảnh này.'));
         }
       };
       w.onerror = () => {
