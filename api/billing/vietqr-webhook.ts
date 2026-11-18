@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { extractOrderCodeFromTransferContent } from '../../src/utils/entitlements.ts';
-import { getSupabaseAdmin, jsonApi } from '../_lib/supabaseAdmin.ts';
+import { getSupabaseServerClient, jsonApi } from '../_lib/supabaseAdmin.ts';
 
 function safeTimingEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
@@ -9,9 +9,6 @@ function safeTimingEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-/**
- * Verifies PayOS HMAC-SHA256 webhook signature (sorted key=value&... of `data` object).
- */
 export function verifyPayOsSignature(
   dataObj: Record<string, unknown>,
   signature: string,
@@ -46,14 +43,13 @@ export interface ParsedWebhookTransfer {
   txId: string;
 }
 
-/**
- * Authenticates & parses incoming bank transfer webhooks from either SePay or PayOS.
- */
 export function verifyAndParseBankWebhook(
   headers: Headers,
   payload: any,
   env: { sepaySecret?: string; payosChecksumKey?: string }
-): { ok: true; transfer: ParsedWebhookTransfer | null } | { ok: false; status: number; error: string } {
+):
+  | { ok: true; transfer: ParsedWebhookTransfer | null }
+  | { ok: false; status: number; error: string } {
   const sepaySecret = (env.sepaySecret || '').trim();
   const payosKey = (env.payosChecksumKey || '').trim();
 
@@ -68,9 +64,10 @@ export function verifyAndParseBankWebhook(
     };
   }
 
-  // Path A: PayOS signed payload (`data` + `signature`)
   if (payload?.signature && payload?.data && payosKey) {
-    if (!verifyPayOsSignature(payload.data, String(payload.signature), payosKey)) {
+    if (
+      !verifyPayOsSignature(payload.data, String(payload.signature), payosKey)
+    ) {
       return { ok: false, status: 401, error: 'Invalid PayOS signature.' };
     }
     const desc = String(
@@ -91,7 +88,6 @@ export function verifyAndParseBankWebhook(
     };
   }
 
-  // Path B: SePay Authorization header (`Apikey <SECRET>` or `Bearer <SECRET>`)
   if (sepaySecret && sepaySecret !== 'your_sepay_webhook_secret') {
     const authHeader = (headers.get('authorization') || '').trim();
     const tokenMatch = authHeader.match(/^(?:Apikey|Bearer)\s+(.+)$/i);
@@ -101,7 +97,6 @@ export function verifyAndParseBankWebhook(
       return { ok: false, status: 401, error: 'Invalid SePay webhook key.' };
     }
 
-    // Ignore outgoing bank transfers
     if (payload?.transferType && payload.transferType !== 'in') {
       return { ok: true, transfer: null };
     }
@@ -148,18 +143,22 @@ export async function POST(request: Request): Promise<Response> {
     return jsonApi({ error: verified.error }, verified.status);
   }
 
-  // Unrelated bank transaction without CGMxxxxxx code -> acknowledge 200 so provider stops retrying
   if (!verified.transfer) {
     return jsonApi({ success: true, ignored: true });
   }
 
   try {
-    const supabaseAdmin = getSupabaseAdmin();
-    const { data, error } = await supabaseAdmin.rpc('fulfill_payment_order', {
-      p_order_code: verified.transfer.orderCode,
-      p_paid_amount: verified.transfer.paidAmount,
-      p_tx_id: verified.transfer.txId,
-    });
+    const supabaseClient = getSupabaseServerClient();
+    const rpcSecret = (process.env.SUPABASE_WEBHOOK_RPC_SECRET || '').trim();
+    const { data, error } = await supabaseClient.rpc(
+      'fulfill_payment_order_webhook',
+      {
+        p_webhook_secret: rpcSecret,
+        p_order_code: verified.transfer.orderCode,
+        p_paid_amount: verified.transfer.paidAmount,
+        p_tx_id: verified.transfer.txId,
+      }
+    );
 
     if (error) {
       return jsonApi({ error: error.message }, 500);

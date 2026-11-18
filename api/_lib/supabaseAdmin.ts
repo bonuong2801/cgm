@@ -47,31 +47,45 @@ function getServiceRoleKey(): string {
   return raw;
 }
 
-export function isServerSupabaseConfigured(): boolean {
-  return Boolean(getSupabaseUrl() && getServiceRoleKey());
+function getPublishableKey(): string {
+  const raw = (
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+  if (!raw || raw === 'your_supabase_anon_public_key') return '';
+  return raw;
 }
 
-let cachedAdminClient: SupabaseClient | null = null;
-let cachedKeySignature = '';
+export function isServerSupabaseConfigured(): boolean {
+  return Boolean(getSupabaseUrl() && (getServiceRoleKey() || getPublishableKey()));
+}
 
-export function getSupabaseAdmin(): SupabaseClient {
+/**
+ * Creates a Supabase client scoped either to a user's JWT (RLS + authenticated RPCs,
+ * requiring NO service_role secret exposure) or service_role when explicitly configured.
+ */
+export function getSupabaseServerClient(userJwt?: string): SupabaseClient {
   const url = getSupabaseUrl();
-  const key = getServiceRoleKey();
+  const serviceKey = getServiceRoleKey();
+  const pubKey = getPublishableKey();
+  const key = serviceKey || pubKey;
+
   if (!url || !key) {
     throw new ApiHttpError(
       503,
-      'Chưa cấu hình SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY trên Server.',
+      'Chưa cấu hình VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY trên Server.',
       'SUPABASE_NOT_CONFIGURED'
     );
   }
-  const sig = `${url}|${key.slice(0, 12)}`;
-  if (!cachedAdminClient || cachedKeySignature !== sig) {
-    cachedAdminClient = createClient(url, key, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    cachedKeySignature = sig;
-  }
-  return cachedAdminClient;
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global:
+      userJwt && !serviceKey
+        ? { headers: { Authorization: `Bearer ${userJwt}` } }
+        : undefined,
+  });
 }
 
 export function mapDbProfileRow(row: any): UserProfile {
@@ -111,7 +125,7 @@ export async function verifyRequestUser(
   email: string;
   profile: UserProfile;
   entitlements: PlanEntitlements;
-  supabaseAdmin: SupabaseClient;
+  supabaseClient: SupabaseClient;
 }> {
   const token = extractBearerOrQueryToken(
     request,
@@ -125,8 +139,8 @@ export async function verifyRequestUser(
     );
   }
 
-  const supabaseAdmin = getSupabaseAdmin();
-  const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(
+  const supabaseClient = getSupabaseServerClient(token);
+  const { data: userData, error: userErr } = await supabaseClient.auth.getUser(
     token
   );
   if (userErr || !userData?.user) {
@@ -138,42 +152,25 @@ export async function verifyRequestUser(
   }
 
   const authUser = userData.user;
-  let { data: profileRow } = await supabaseAdmin
+  const { data: profileRow } = await supabaseClient
     .from('profiles')
     .select('*')
     .eq('id', authUser.id)
     .maybeSingle();
 
-  // Safety bootstrap if trigger had not created row yet
-  if (!profileRow) {
-    const meta = authUser.user_metadata || {};
-    const { data: inserted, error: insertErr } = await supabaseAdmin
-      .from('profiles')
-      .upsert(
-        {
-          id: authUser.id,
-          email: authUser.email || '',
-          full_name: meta.full_name || meta.name || '',
-          avatar_url: meta.avatar_url || meta.picture || '',
-          tier: 'free',
-          role: 'user',
-        },
-        { onConflict: 'id' }
-      )
-      .select('*')
-      .single();
+  const meta = authUser.user_metadata || {};
+  const profile: UserProfile = profileRow
+    ? mapDbProfileRow(profileRow)
+    : {
+        id: authUser.id,
+        email: authUser.email || '',
+        fullName: String(meta.full_name || meta.name || ''),
+        avatarUrl: String(meta.avatar_url || meta.picture || ''),
+        tier: 'free',
+        proExpiresAt: null,
+        role: 'user',
+      };
 
-    if (insertErr || !inserted) {
-      throw new ApiHttpError(
-        500,
-        'Chưa khởi tạo bảng `profiles` trên Supabase. Hãy chạy file `supabase/schema.sql` trong SQL Editor.',
-        'SCHEMA_MISSING'
-      );
-    }
-    profileRow = inserted;
-  }
-
-  const profile = mapDbProfileRow(profileRow);
   const entitlements = getPlanEntitlements(profile);
 
   return {
@@ -181,7 +178,7 @@ export async function verifyRequestUser(
     email: authUser.email || '',
     profile,
     entitlements,
-    supabaseAdmin,
+    supabaseClient,
   };
 }
 

@@ -7,7 +7,7 @@ import {
 
 export async function GET(request: Request): Promise<Response> {
   try {
-    const { userId, supabaseAdmin } = await verifyRequestUser(request);
+    const { userId, supabaseClient } = await verifyRequestUser(request);
     const url = new URL(request.url);
     const orderCode = (url.searchParams.get('orderCode') || '')
       .trim()
@@ -17,7 +17,7 @@ export async function GET(request: Request): Promise<Response> {
       return jsonApi({ error: 'Mã đơn hàng không hợp lệ.' }, 400);
     }
 
-    const { data: order, error } = await supabaseAdmin
+    const { data: order, error } = await supabaseClient
       .from('payment_orders')
       .select('order_code, status, paid_at, plan_id')
       .eq('order_code', orderCode)
@@ -30,7 +30,7 @@ export async function GET(request: Request): Promise<Response> {
 
     let updatedProfile = null;
     if (order.status === 'paid') {
-      const { data: pRow } = await supabaseAdmin
+      const { data: pRow } = await supabaseClient
         .from('profiles')
         .select('*')
         .eq('id', userId)

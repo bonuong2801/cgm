@@ -7,7 +7,7 @@ import {
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    const { userId, supabaseAdmin } = await verifyRequestUser(request);
+    const { supabaseClient } = await verifyRequestUser(request);
 
     const body = (await request.json().catch(() => ({}))) as { code?: string };
     const cleanCode = String(body?.code || '')
@@ -15,25 +15,17 @@ export async function POST(request: Request): Promise<Response> {
       .toUpperCase();
 
     if (cleanCode.length < 4 || cleanCode.length > 64) {
-      return jsonApi(
-        { error: 'Vui lòng nhập Mã Kích Hoạt hợp lệ.' },
-        400
-      );
+      return jsonApi({ error: 'Vui lòng nhập Mã Kích Hoạt hợp lệ.' }, 400);
     }
 
-    const { data: rpcResult, error: rpcErr } = await supabaseAdmin.rpc(
-      'redeem_license_key',
-      {
-        p_user_id: userId,
-        p_code: cleanCode,
-      }
+    const { data: rpcResult, error: rpcErr } = await supabaseClient.rpc(
+      'redeem_my_license_key',
+      { p_code: cleanCode }
     );
 
     if (rpcErr) {
       return jsonApi(
-        {
-          error: `Không thể kích hoạt mã (${rpcErr.message}). Hãy chắc chắn đã chạy file supabase/schema.sql.`,
-        },
+        { error: `Không thể kích hoạt mã (${rpcErr.message}).` },
         500
       );
     }
@@ -49,16 +41,10 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const { data: updatedRow } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
     return jsonApi({
       ok: true,
       planType: rpcResult.plan_type,
-      profile: updatedRow ? mapDbProfileRow(updatedRow) : null,
+      profile: rpcResult.profile ? mapDbProfileRow(rpcResult.profile) : null,
     });
   } catch (err: any) {
     if (err instanceof ApiHttpError) {
