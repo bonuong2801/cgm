@@ -1,18 +1,20 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const metaEnv = (import.meta as any).env || {};
-const rawUrl = String(metaEnv.VITE_SUPABASE_URL || '').trim();
-const rawAnonKey = String(metaEnv.VITE_SUPABASE_ANON_KEY || '').trim();
+export const supabaseProjectUrl = String(metaEnv.VITE_SUPABASE_URL || '').trim();
+export const supabasePublishableKey = String(
+  metaEnv.VITE_SUPABASE_ANON_KEY || ''
+).trim();
 
 export const isClientSupabaseConfigured = Boolean(
-  rawUrl &&
-    !rawUrl.includes('your-project-id') &&
-    rawAnonKey &&
-    rawAnonKey !== 'your_supabase_anon_public_key'
+  supabaseProjectUrl &&
+    !supabaseProjectUrl.includes('your-project-id') &&
+    supabasePublishableKey &&
+    supabasePublishableKey !== 'your_supabase_anon_public_key'
 );
 
 export const supabase: SupabaseClient | null = isClientSupabaseConfigured
-  ? createClient(rawUrl, rawAnonKey, {
+  ? createClient(supabaseProjectUrl, supabasePublishableKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
