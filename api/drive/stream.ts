@@ -63,7 +63,10 @@ export async function GET(request: Request): Promise<Response> {
   const apiKey = getServerDriveApiKey();
   if (!apiKey) {
     return new Response(
-      JSON.stringify({ error: 'Chưa cấu hình GOOGLE_API_KEY trên Server.' }),
+      JSON.stringify({
+        error:
+          'Tính năng tải trực tiếp từ Google Drive đang tạm bảo trì. Vui lòng thử lại sau.',
+      }),
       {
         status: 503,
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -92,7 +95,8 @@ export async function GET(request: Request): Promise<Response> {
     if (!upstream.ok && upstream.status !== 206) {
       return new Response(
         JSON.stringify({
-          error: `Google Drive từ chối tải file gốc (HTTP ${upstream.status}). Có thể vượt hạn mức tải trong ngày của Drive.`,
+          error:
+            'Không thể tải tệp gốc từ Google Drive lúc này (tệp có thể đang bị giới hạn lượt tải trong ngày).',
         }),
         {
           status: upstream.status,
@@ -120,10 +124,10 @@ export async function GET(request: Request): Promise<Response> {
       status: upstream.status,
       headers: resHeaders,
     });
-  } catch (err: any) {
+  } catch {
     return new Response(
       JSON.stringify({
-        error: err?.message || 'Lỗi kết nối khi truyền luồng dữ liệu từ Drive.',
+        error: 'Kết nối tải tệp từ Google Drive bị gián đoạn. Vui lòng thử lại.',
       }),
       {
         status: 502,

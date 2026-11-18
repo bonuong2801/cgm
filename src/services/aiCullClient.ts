@@ -3,6 +3,7 @@ import {
   attachAuthToStreamUrl,
   getAuthHeaders,
 } from '../lib/supabaseClient.ts';
+import { toUserFriendlyError } from '../utils/userMessages.ts';
 import { loadImageElement } from './imageProcessor.ts';
 
 export interface AiCullItemOutcome {
@@ -96,7 +97,11 @@ export async function runSmartAiCullBatch(
       })
     );
 
-    if (encodedBatch.length === 0) continue;
+    if (encodedBatch.length === 0) {
+      throw new Error(
+        'Không thể đọc dữ liệu hình ảnh để AI phân tích. Vui lòng kiểm tra lại ảnh và thử lại.'
+      );
+    }
 
     const res = await fetch('/api/ai/cull', {
       method: 'POST',
@@ -111,7 +116,10 @@ export async function runSmartAiCullBatch(
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(
-        data?.error || `Không thể chạy AI lọc ảnh (HTTP ${res.status}).`
+        toUserFriendlyError(
+          data?.error,
+          'Tính năng AI lọc ảnh hiện đang gặp sự cố hoặc tạm bảo trì. Vui lòng thử lại sau ít phút.'
+        )
       );
     }
 

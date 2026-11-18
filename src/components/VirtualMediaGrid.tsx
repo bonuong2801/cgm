@@ -444,7 +444,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
               Tải hàng loạt ảnh từ máy tính hoặc dán link Google Drive
             </h1>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Hỗ trợ <strong className="text-emerald-300">ghép nhiều Logo cùng lúc lên 1 bức ảnh</strong> (Nhà tổ chức + Nhà tài trợ + Studio), chỉnh màu tự nhiên, cắt tỷ lệ và xuất hàng loạt bằng 4 luồng Worker tốc độ cao.
+              Hỗ trợ <strong className="text-emerald-300">ghép nhiều Logo cùng lúc lên 1 bức ảnh</strong> (Nhà tổ chức + Nhà tài trợ + Studio), chỉnh màu tự nhiên, cắt tỷ lệ và xuất hàng loạt tốc độ cao, giữ trọn độ nét.
             </p>
           </div>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-3">

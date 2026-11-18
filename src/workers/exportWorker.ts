@@ -57,7 +57,7 @@ async function renderJob(req: WorkerRenderRequest): Promise<Blob> {
     const res = await fetch(req.downloadUrl);
     if (!res.ok) {
       throw new Error(
-        `Không thể tải ảnh gốc chất lượng cao (Mã HTTP ${res.status}).`
+        'Không thể tải ảnh gốc chất lượng cao. Vui lòng kiểm tra kết nối mạng.'
       );
     }
     rawBlob = await res.blob();
@@ -72,7 +72,7 @@ async function renderJob(req: WorkerRenderRequest): Promise<Blob> {
     const canvas = new OffscreenCanvas(geom.outW, geom.outH);
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      throw new Error('Không thể khởi tạo OffscreenCanvas 2D.');
+      throw new Error('Trình duyệt không đủ bộ nhớ để xử lý bức ảnh này.');
     }
 
     ctx.imageSmoothingEnabled = true;

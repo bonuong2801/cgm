@@ -101,7 +101,7 @@ async function fetchAllFolderChildrenDirect(
       throw new Error(
         response.status === 404
           ? "Không tìm thấy thư mục Google Drive hoặc thư mục chưa bật 'Bất kỳ ai có đường liên kết đều có thể xem'."
-          : `Lỗi Google Drive API (HTTP ${response.status}).`
+          : 'Không thể tải dữ liệu từ Google Drive lúc này. Vui lòng thử lại sau.'
       );
     }
     const data = (await response.json()) as {
@@ -191,7 +191,7 @@ export async function crawlGoogleDriveFolder(
   const fallbackKey = getFallbackClientDriveApiKey();
   if (!fallbackKey) {
     throw new Error(
-      'Chưa cấu hình khóa GOOGLE_API_KEY trên Server (file .env hoặc Vercel Environment Variables).'
+      'Tính năng tải trực tiếp từ Google Drive hiện đang tạm bảo trì. Vui lòng tải ảnh từ máy tính hoặc thử lại sau ít phút.'
     );
   }
 

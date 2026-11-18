@@ -229,7 +229,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       currentFileName: tasksToRun[0]?.targetFileName || '',
       failedItems: [],
       completedSuccessCount: 0,
-      exportMethodLabel: 'Đang khởi tạo 4 luồng OffscreenCanvas Worker...',
+      exportMethodLabel: 'Đang chuẩn bị xử lý ảnh chất lượng cao...',
     });
 
     try {

@@ -21,6 +21,7 @@ import type {
   VietQrOrderResponse,
 } from '../types/auth.ts';
 import { formatVndCurrency } from '../utils/entitlements.ts';
+import { toUserFriendlyError } from '../utils/userMessages.ts';
 import { getAuthHeaders } from '../lib/supabaseClient.ts';
 
 interface UpgradeModalProps {
@@ -186,7 +187,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       }
       setActiveOrder(data as VietQrOrderResponse);
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Không thể khởi tạo đơn VietQR.');
+      setErrorMsg(
+        toUserFriendlyError(
+          err,
+          'Kênh thanh toán QR hiện đang bận. Vui lòng thử lại hoặc dùng Mã Kích Hoạt.'
+        )
+      );
     } finally {
       setCreatingOrder(false);
     }
@@ -218,7 +224,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       );
       onClose();
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Lỗi kích hoạt mã.');
+      setErrorMsg(
+        toUserFriendlyError(
+          err,
+          'Không thể kích hoạt mã lúc này. Vui lòng kiểm tra lại mã và thử lại.'
+        )
+      );
     } finally {
       setRedeeming(false);
     }
@@ -249,7 +260,9 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       }
       setAdminNote('');
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Lỗi tạo mã VIP.');
+      setErrorMsg(
+        toUserFriendlyError(err, 'Không thể tạo mã VIP lúc này. Vui lòng thử lại.')
+      );
     } finally {
       setAdminBusy(false);
     }

@@ -31,7 +31,12 @@ export async function GET(request: Request): Promise<Response> {
     }
 
     const { data, error } = await supabaseClient.rpc('admin_list_licenses');
-    if (error) return jsonApi({ error: error.message }, 500);
+    if (error) {
+      return jsonApi(
+        { error: 'Không thể tải danh sách mã kích hoạt lúc này.' },
+        500
+      );
+    }
     return jsonApi({ licenses: data || [] });
   } catch (err: any) {
     if (err instanceof ApiHttpError) {
@@ -85,7 +90,12 @@ export async function POST(request: Request): Promise<Response> {
       p_note: note,
     });
 
-    if (error) return jsonApi({ error: error.message }, 500);
+    if (error) {
+      return jsonApi(
+        { error: 'Không thể tạo mã kích hoạt lúc này. Vui lòng thử lại.' },
+        500
+      );
+    }
     return jsonApi({ created: data || [] });
   } catch (err: any) {
     if (err instanceof ApiHttpError) {

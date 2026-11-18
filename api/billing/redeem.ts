@@ -25,7 +25,7 @@ export async function POST(request: Request): Promise<Response> {
 
     if (rpcErr) {
       return jsonApi(
-        { error: `Không thể kích hoạt mã (${rpcErr.message}).` },
+        { error: 'Không thể kiểm tra mã kích hoạt lúc này. Vui lòng thử lại sau ít phút.' },
         500
       );
     }

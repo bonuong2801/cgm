@@ -184,7 +184,7 @@ async function streamRawItemToFileHandle(
     });
     if (!response.ok) {
       throw new Error(
-        `Không thể tải luồng dữ liệu gốc (Mã HTTP ${response.status}).`
+        'Không thể tải tệp gốc từ đám mây. Vui lòng kiểm tra kết nối và thử lại.'
       );
     }
 
@@ -214,7 +214,7 @@ async function fetchRawBlobForZip(
     signal,
   });
   if (!response.ok) {
-    throw new Error(`Không thể tải file gốc (Mã HTTP ${response.status}).`);
+    throw new Error('Không thể tải tệp gốc từ đám mây. Vui lòng thử lại.');
   }
   return await response.blob();
 }
@@ -254,7 +254,7 @@ export async function runBatchExportTasks(
         mode: 'readwrite',
       });
       exportMethodLabel =
-        'Ghi trực tiếp ổ cứng (OffscreenCanvas 4 Worker song song)';
+        'Lưu trực tiếp vào thư mục trên máy tính';
     } catch (pickerErr: any) {
       if (pickerErr?.name === 'AbortError') {
         throw new DOMException(
@@ -264,7 +264,7 @@ export async function runBatchExportTasks(
       }
       rootDirHandle = null;
       exportMethodLabel =
-        'Đóng gói ZIP phân đoạn tự động (Giữ nguyên cấu trúc thư mục con)';
+        'Tải xuống tệp nén ZIP giữ nguyên cấu trúc thư mục';
     }
   }
 

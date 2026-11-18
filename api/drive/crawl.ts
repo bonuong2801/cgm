@@ -181,22 +181,20 @@ async function fetchAllFolderChildren(
       if (res.status === 401 || res.status === 403) {
         if (errorDetail.toLowerCase().includes('quota')) {
           throw new Error(
-            'Đã vượt quá giới hạn truy cập (Quota) của Google Drive API. Vui lòng thử lại sau ít phút.'
+            'Thư mục Google Drive đang có quá nhiều lượt tải cùng lúc. Vui lòng đợi ít phút rồi thử lại.'
           );
         }
         throw new Error(
-          "Không thể truy cập thư mục. Vui lòng kiểm tra thư mục đã bật 'Bất kỳ ai có đường liên kết đều có thể xem' và khóa GOOGLE_API_KEY hợp lệ."
+          "Không thể mở thư mục này. Vui lòng kiểm tra thư mục Google Drive đã bật quyền chia sẻ công khai 'Bất kỳ ai có đường liên kết đều có thể xem'."
         );
       }
       if (res.status === 404) {
         throw new Error(
-          "Không tìm thấy thư mục Google Drive (404). Đường dẫn không tồn tại hoặc chưa bật chia sẻ công khai 'Bất kỳ ai có đường liên kết đều có thể xem'."
+          "Không tìm thấy thư mục Google Drive. Đường dẫn không tồn tại hoặc chưa bật chia sẻ 'Bất kỳ ai có đường liên kết đều có thể xem'."
         );
       }
       throw new Error(
-        `Lỗi kết nối Google Drive API (Mã ${res.status}): ${
-          errorDetail || 'Vui lòng kiểm tra lại đường dẫn.'
-        }`
+        'Không thể kết nối tới Google Drive lúc này. Vui lòng kiểm tra lại đường dẫn và thử lại.'
       );
     }
 
@@ -286,7 +284,7 @@ export async function GET(request: Request): Promise<Response> {
     return jsonResponse(
       {
         error:
-          'Chưa cấu hình biến môi trường GOOGLE_API_KEY trên Server. Vui lòng thêm GOOGLE_API_KEY vào file .env hoặc Vercel Environment Variables.',
+          'Tính năng tải trực tiếp từ Google Drive hiện đang tạm bảo trì. Vui lòng tải ảnh từ máy tính hoặc thử lại sau ít phút.',
         code: 'MISSING_API_KEY',
       },
       503

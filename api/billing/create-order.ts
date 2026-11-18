@@ -17,7 +17,7 @@ export async function POST(request: Request): Promise<Response> {
       return jsonApi(
         {
           error:
-            'Chưa điền số tài khoản ngân hàng nhận VietQR (VIETQR_BANK_ID, VIETQR_ACCOUNT_NO, VIETQR_ACCOUNT_NAME) trong file .env. Bạn có thể dùng tab Nhập Mã Kích Hoạt ngay bây giờ!',
+            'Kênh thanh toán tự động qua mã QR hiện đang tạm bảo trì. Vui lòng chuyển sang tab Nhập Mã Kích Hoạt hoặc thử lại sau.',
           code: 'VIETQR_NOT_CONFIGURED',
         },
         503
@@ -50,7 +50,7 @@ export async function POST(request: Request): Promise<Response> {
 
     if (rpcErr) {
       return jsonApi(
-        { error: `Không thể khởi tạo đơn thanh toán (${rpcErr.message}).` },
+        { error: 'Không thể khởi tạo mã thanh toán lúc này. Vui lòng thử lại sau ít phút.' },
         500
       );
     }

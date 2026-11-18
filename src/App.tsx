@@ -38,6 +38,7 @@ import {
   saveWorkspaceSession,
 } from './services/sessionStore.ts';
 import { runSmartAiCullBatch } from './services/aiCullClient.ts';
+import { toUserFriendlyError } from './utils/userMessages.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { TopBar } from './components/TopBar.tsx';
 import { FolderSidebar } from './components/FolderSidebar.tsx';
@@ -304,7 +305,7 @@ function StudioWorkspace() {
 
     setIsLoading(true);
     setErrorMessage(null);
-    setLoadingStatusText('Đang kết nối máy chủ Google Drive Proxy...');
+    setLoadingStatusText('Đang kết nối và tải danh sách ảnh từ Google Drive...');
 
     try {
       const result = await crawlGoogleDriveFolder(
@@ -325,8 +326,10 @@ function StudioWorkspace() {
       setSelectedItemId(result.items[0]?.id || null);
     } catch (err: any) {
       setErrorMessage(
-        err?.message ||
-          'Không thể tải thư mục Google Drive. Vui lòng kiểm tra quyền chia sẻ công khai.'
+        toUserFriendlyError(
+          err,
+          'Không thể mở thư mục Google Drive lúc này. Vui lòng kiểm tra đường liên kết hoặc thử lại sau.'
+        )
       );
     } finally {
       setIsLoading(false);
@@ -383,7 +386,7 @@ function StudioWorkspace() {
         );
       } catch (err: any) {
         setErrorMessage(
-          err?.message || 'Không thể đọc tệp ảnh từ máy tính.'
+          toUserFriendlyError(err, 'Không thể đọc tệp ảnh từ máy tính.')
         );
       } finally {
         setIsLoading(false);

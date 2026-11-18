@@ -40,11 +40,6 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-/**
- * Zero-SDK Server-side Gemini Vision Smart Culling endpoint.
- * Evaluates up to 12 compact JPEG thumbnails per batch for blur, closed eyes,
- * bad exposure, or accidental shots, returning structured Vietnamese feedback.
- */
 export async function POST(request: Request): Promise<Response> {
   try {
     const { entitlements } = await verifyRequestUser(request);
@@ -70,8 +65,8 @@ export async function POST(request: Request): Promise<Response> {
     return jsonResponse(
       {
         error:
-          'Chưa cấu hình GEMINI_API_KEY trên Server. Hãy thêm GEMINI_API_KEY vào file .env hoặc Vercel Environment Variables để bật tính năng AI lọc ảnh lỗi.',
-        code: 'MISSING_GEMINI_KEY',
+          'Tính năng AI lọc ảnh hiện đang gặp sự cố hoặc tạm bảo trì. Vui lòng thử lại sau ít phút.',
+        code: 'AI_UNAVAILABLE',
       },
       503
     );
@@ -81,16 +76,16 @@ export async function POST(request: Request): Promise<Response> {
   try {
     body = (await request.json()) as { photos?: AiCullInputPhoto[] };
   } catch {
-    return jsonResponse({ error: 'Dữ liệu gửi lên không hợp lệ.' }, 400);
+    return jsonResponse({ error: 'Dữ liệu ảnh gửi lên không hợp lệ.' }, 400);
   }
 
   const photos = body?.photos;
   if (!Array.isArray(photos) || photos.length === 0) {
-    return jsonResponse({ error: 'Danh sách ảnh trống.' }, 400);
+    return jsonResponse({ error: 'Danh sách ảnh cần phân tích đang trống.' }, 400);
   }
   if (photos.length > MAX_BATCH_PHOTOS) {
     return jsonResponse(
-      { error: `Mỗi lượt phân tích tối đa ${MAX_BATCH_PHOTOS} ảnh.` },
+      { error: `Mỗi lượt chỉ phân tích tối đa ${MAX_BATCH_PHOTOS} ảnh.` },
       400
     );
   }
@@ -115,7 +110,7 @@ export async function POST(request: Request): Promise<Response> {
       p.base64Jpeg.length > MAX_BASE64_LEN
     ) {
       return jsonResponse(
-        { error: 'Ảnh thu nhỏ vượt quá giới hạn dung lượng cho phép.' },
+        { error: 'Có tệp ảnh không đúng định dạng hỗ trợ. Vui lòng thử lại.' },
         400
       );
     }
@@ -166,12 +161,14 @@ export async function POST(request: Request): Promise<Response> {
     );
 
     if (!upstream.ok) {
-      const errText = await upstream.text().catch(() => '');
       return jsonResponse(
         {
-          error: `Lỗi từ Gemini API (HTTP ${upstream.status}): ${errText.slice(0, 180)}`,
+          error:
+            upstream.status === 429
+              ? 'Hệ thống AI đang có nhiều người sử dụng cùng lúc. Vui lòng đợi ít phút rồi thử lại.'
+              : 'Tính năng AI lọc ảnh hiện đang gặp sự cố kết nối. Vui lòng thử lại sau.',
         },
-        upstream.status
+        upstream.status >= 500 ? 502 : upstream.status
       );
     }
 
@@ -193,9 +190,12 @@ export async function POST(request: Request): Promise<Response> {
     }));
 
     return jsonResponse({ results: normalized });
-  } catch (err: any) {
+  } catch {
     return jsonResponse(
-      { error: err?.message || 'Không thể kết nối tới dịch vụ Gemini AI.' },
+      {
+        error:
+          'Tính năng AI lọc ảnh hiện đang tạm gián đoạn kết nối. Vui lòng thử lại sau ít phút.',
+      },
       502
     );
   }

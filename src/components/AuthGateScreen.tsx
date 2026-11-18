@@ -17,6 +17,7 @@ import {
   supabaseProjectUrl,
   supabasePublishableKey,
 } from '../lib/supabaseClient.ts';
+import { toUserFriendlyError } from '../utils/userMessages.ts';
 
 type AuthTab = 'login' | 'register' | 'forgot';
 
@@ -32,7 +33,6 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
-  // Auto-detect whether Google OAuth is enabled on Supabase Auth settings
   useEffect(() => {
     if (!isSupabaseConfigured || !supabaseProjectUrl || !supabasePublishableKey) {
       return;
@@ -56,41 +56,18 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
   if (!isSupabaseConfigured || !supabase) {
     return (
       <div className="min-h-screen w-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6 select-none">
-        <div className="max-w-lg w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-7 shadow-2xl space-y-5">
-          <div className="flex items-center gap-3">
-            <img
-              src="/logo-cgm.png"
-              alt="CGM Studio"
-              className="w-11 h-11 rounded-xl border border-zinc-800 object-cover"
-            />
-            <div>
-              <h1 className="text-base font-bold text-zinc-100">
-                Cấu hình Cổng Đăng Nhập Supabase — CGM Studio
-              </h1>
-              <p className="text-xs text-zinc-400">
-                Hoàn tất 3 bước ngắn bên dưới để kích hoạt Đăng nhập &amp; Phân cấp Tài khoản
-              </p>
-            </div>
-          </div>
-
-          <ol className="space-y-3 text-xs text-zinc-300 bg-zinc-950 border border-zinc-800 rounded-xl p-4 list-decimal list-inside leading-relaxed">
-            <li>
-              Tạo project trên <strong>Supabase</strong>, mở mục{' '}
-              <code className="text-indigo-300">SQL Editor</code> và chạy toàn bộ file{' '}
-              <code className="text-emerald-300">supabase/schema.sql</code>.
-            </li>
-            <li>
-              Sao chép <code className="text-indigo-300">Project URL</code>,{' '}
-              <code className="text-indigo-300">anon public key</code> và{' '}
-              <code className="text-indigo-300">service_role key</code> từ mục{' '}
-              <strong>Project Settings → API</strong>.
-            </li>
-            <li>
-              Điền vào file <code className="text-emerald-300">.env</code> (theo mẫu{' '}
-              <code className="text-zinc-400">.env.example</code>) rồi khởi động lại{' '}
-              <code className="text-indigo-300">npm run dev</code>.
-            </li>
-          </ol>
+        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-7 shadow-2xl text-center space-y-4">
+          <img
+            src="/logo-cgm.png"
+            alt="CGM Studio"
+            className="w-12 h-12 rounded-xl border border-zinc-800 object-cover mx-auto"
+          />
+          <h1 className="text-base font-bold text-zinc-100">
+            Hệ thống CGM Studio đang tạm bảo trì
+          </h1>
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            Dịch vụ đăng nhập đang được nâng cấp để phục vụ bạn tốt hơn. Vui lòng tải lại trang sau ít phút.
+          </p>
         </div>
       </div>
     );
@@ -103,7 +80,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
 
     if (!googleEnabled) {
       setErrorMsg(
-        'Đăng nhập Google chưa được bật Client ID & Client Secret trong Supabase Dashboard (Authentication → Providers → Google).'
+        'Đăng nhập nhanh bằng Google hiện đang tạm bảo trì. Vui lòng đăng nhập hoặc đăng ký bằng Email bên dưới.'
       );
       return;
     }
@@ -116,7 +93,12 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
       },
     });
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg(
+        toUserFriendlyError(
+          error,
+          'Không thể kết nối đăng nhập Google lúc này. Vui lòng dùng Email và mật khẩu.'
+        )
+      );
       setSubmitting(false);
     }
   };
@@ -135,16 +117,10 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
           email: trimmedEmail,
           password,
         });
-        if (error) {
-          throw new Error(
-            error.message.includes('Invalid login credentials')
-              ? 'Email hoặc mật khẩu không chính xác.'
-              : error.message
-          );
-        }
+        if (error) throw error;
       } else if (tab === 'register') {
         if (password.length < 6) {
-          throw new Error('Mật khẩu phải có ít nhất 6 ký tự.');
+          throw new Error('Mật khẩu cần có ít nhất 6 ký tự.');
         }
         const { data, error } = await supabase.auth.signUp({
           email: trimmedEmail,
@@ -171,7 +147,12 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
         );
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Không thể xử lý yêu cầu đăng nhập.');
+      setErrorMsg(
+        toUserFriendlyError(
+          err,
+          'Không thể thực hiện yêu cầu lúc này. Vui lòng kiểm tra thông tin và thử lại.'
+        )
+      );
     } finally {
       setSubmitting(false);
     }
@@ -216,10 +197,10 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
                 <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-semibold text-zinc-100">
-                    AI Lọc Ảnh Lỗi &amp; Xuất 4 Luồng Siêu Tốc
+                    AI Lọc Ảnh Lỗi &amp; Xuất Hàng Loạt Siêu Tốc
                   </div>
                   <p className="text-zinc-400 mt-0.5 leading-relaxed">
-                    Tự động phát hiện ảnh nhắm mắt, rung nhòe và xuất hàng nghìn ảnh độ phân giải gốc qua OffscreenCanvas.
+                    Tự động phát hiện ảnh nhắm mắt, rung nhòe và xuất hàng nghìn ảnh giữ trọn độ nét gốc.
                   </p>
                 </div>
               </div>
@@ -231,14 +212,13 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
             <div className="text-zinc-300 leading-relaxed">
               Đăng nhập miễn phí để bắt đầu ngay. Hỗ trợ nâng cấp{' '}
               <strong className="text-amber-300">Mở khóa Full chức năng</strong>{' '}
-              qua VietQR tự động hoặc Mã Kích Hoạt VIP.
+              nhanh chóng qua mã QR hoặc Mã Kích Hoạt VIP.
             </div>
           </div>
         </div>
 
         {/* Right Login / Sign-up Form Column */}
         <div className="lg:col-span-6 p-7 sm:p-9 flex flex-col justify-center space-y-5">
-          {/* Tab Switcher */}
           <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-950 rounded-xl border border-zinc-800">
             <button
               type="button"
@@ -272,7 +252,6 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
             </button>
           </div>
 
-          {/* Google OAuth 1-Click */}
           <button
             type="button"
             disabled={submitting}

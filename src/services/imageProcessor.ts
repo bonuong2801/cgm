@@ -193,7 +193,7 @@ async function processPhotoMainThreadFallback(
     });
     if (!response.ok) {
       throw new Error(
-        `Không thể tải dữ liệu ảnh gốc chất lượng cao (Mã HTTP ${response.status}).`
+        'Không thể tải dữ liệu ảnh gốc chất lượng cao. Vui lòng thử lại.'
       );
     }
     const blob = await response.blob();

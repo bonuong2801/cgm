@@ -80,7 +80,7 @@ export function getSupabaseServerClient(userJwt?: string): SupabaseClient {
   if (!url || !key) {
     throw new ApiHttpError(
       503,
-      'Chưa cấu hình VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY trên Server.',
+      'Hệ thống đăng nhập đang tạm bảo trì. Vui lòng thử lại sau ít phút.',
       'SUPABASE_NOT_CONFIGURED'
     );
   }
