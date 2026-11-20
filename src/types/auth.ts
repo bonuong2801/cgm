@@ -18,7 +18,6 @@ export interface PlanEntitlements {
   maxLogoLayers: number;
   canFreeDragLogo: boolean;
   canSaveLogoPresets: boolean;
-  canUseAiCull: boolean;
   canExportOriginalOr4K: boolean;
   canExportPngOrMaxQuality: boolean;
   canCustomBatchRename: boolean;

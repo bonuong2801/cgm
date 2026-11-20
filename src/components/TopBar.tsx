@@ -6,7 +6,6 @@ import {
   FolderUp,
   ImagePlus,
   Loader2,
-  Lock,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -14,9 +13,7 @@ import {
   PanelRightOpen,
   RotateCcw,
   Shield,
-  Sparkles,
   Trash2,
-  X,
 } from 'lucide-react';
 import type { PlanEntitlements, UserProfile } from '../types/auth.ts';
 
@@ -31,9 +28,6 @@ interface TopBarProps {
   onImportLocalFiles: (files: FileList | File[]) => void;
   onClearAllWorkspace: () => void;
   onOpenExportModal: () => void;
-  onRunAiCull: () => void;
-  onCancelAiCull: () => void;
-  aiCullProgress: { running: boolean; done: number; total: number } | null;
   isLoading: boolean;
   keptCount: number;
   totalCount: number;
@@ -57,9 +51,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   onImportLocalFiles,
   onClearAllWorkspace,
   onOpenExportModal,
-  onRunAiCull,
-  onCancelAiCull,
-  aiCullProgress,
   isLoading,
   keptCount,
   totalCount,
@@ -213,45 +204,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       </div>
 
-      {/* Zone 3: AI Cull + Clear + Undo + Export + Account Tier Badge */}
+      {/* Zone 3: Clear + Undo + Export + Account Tier Badge */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {totalCount > 0 &&
-          (aiCullProgress?.running ? (
-            <button
-              type="button"
-              onClick={onCancelAiCull}
-              className="px-2.5 py-1.5 text-xs font-medium text-amber-200 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 rounded-lg flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-              title="Dừng tiến trình AI lọc ảnh"
-            >
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-              <span className="font-mono tabular-nums">
-                AI {aiCullProgress.done}/{aiCullProgress.total}
-              </span>
-              <X className="w-3 h-3" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                if (!entitlements.canUseAiCull) {
-                  onOpenUpgradeModal(
-                    'Tính năng AI tự động lọc ảnh nhắm mắt, rung nhòe & chấm sao dành riêng cho Tài khoản Mở khóa Full (Pro).'
-                  );
-                } else {
-                  onRunAiCull();
-                }
-              }}
-              className="px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:text-white bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors hidden lg:flex items-center gap-1 whitespace-nowrap cursor-pointer"
-              title="Dùng AI phát hiện ảnh nhắm mắt, rung nhòe"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
-              <span className="hidden 2xl:inline">AI lọc ảnh</span>
-              {!entitlements.canUseAiCull && (
-                <Lock className="w-3 h-3 text-amber-400" aria-hidden="true" />
-              )}
-            </button>
-          ))}
-
         {totalCount > 0 && (
           <button
             type="button"

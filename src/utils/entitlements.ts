@@ -29,7 +29,6 @@ export function getPlanEntitlements(
     maxLogoLayers: isPro ? Number.POSITIVE_INFINITY : FREE_MAX_LOGO_LAYERS,
     canFreeDragLogo: isPro,
     canSaveLogoPresets: isPro,
-    canUseAiCull: isPro,
     canExportOriginalOr4K: isPro,
     canExportPngOrMaxQuality: isPro,
     canCustomBatchRename: isPro,

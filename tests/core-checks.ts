@@ -29,7 +29,6 @@ import {
   buildExportPlan,
   canBypassPhotoReencode,
 } from '../src/services/batchExporter.ts';
-import { POST as handleAiCull } from '../api/ai/cull.ts';
 import {
   verifyAndParseBankWebhook,
   verifyPayOsSignature,
@@ -200,7 +199,6 @@ async function runCoreChecks() {
   assert.equal(freeEnt.maxExportFilesPerRun, FREE_MAX_EXPORT_FILES);
   assert.equal(freeEnt.maxLogoLayers, FREE_MAX_LOGO_LAYERS);
   assert.equal(freeEnt.canFreeDragLogo, false);
-  assert.equal(freeEnt.canUseAiCull, false);
   assert.equal(freeEnt.canExportOriginalOr4K, false);
   assert.equal(freeEnt.canCustomBatchRename, false);
 
@@ -210,7 +208,6 @@ async function runCoreChecks() {
   assert.equal(proEnt.maxExportFilesPerRun, Number.POSITIVE_INFINITY);
   assert.equal(proEnt.maxLogoLayers, Number.POSITIVE_INFINITY);
   assert.equal(proEnt.canFreeDragLogo, true);
-  assert.equal(proEnt.canUseAiCull, true);
 
   const expiredPro: UserProfile = {
     ...freeUser,
@@ -285,15 +282,6 @@ async function runCoreChecks() {
     new Request('http://localhost:3000/api/drive/stream?id=../../etc/passwd')
   );
   assert.equal(badStreamRes.status, 400);
-
-  const unauthAiRes = await handleAiCull(
-    new Request('http://localhost:3000/api/ai/cull', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photos: [] }),
-    })
-  );
-  assert.equal(unauthAiRes.status, 401);
 
   // 9. Customer-Friendly Error Message Sanitizer (no developer jargon leaked to end-users)
   assert.equal(

@@ -289,7 +289,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 Mở Khóa Full Chức Năng — CGM Studio Pro
               </h2>
               <p className="text-[11px] text-zinc-400">
-                Không giới hạn số lượng xuất · Ghép Đa Logo · Kéo-thả tự do · AI lọc ảnh lỗi
+                Không giới hạn số lượng xuất · Ghép Đa Logo · Kéo-thả tự do · Độ phân giải gốc 4K
               </p>
             </div>
           </div>
@@ -322,7 +322,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 <li>• Xuất tối đa 20 ảnh / lượt (2048px)</li>
                 <li>• Chỉ ghép tối đa 1 Logo cố định</li>
                 <li>• Khóa kéo-thả Logo tự do &amp; Bộ Logo mẫu</li>
-                <li>• Khóa AI lọc ảnh lỗi &amp; đổi tên tùy chỉnh</li>
+                <li>• Khóa xuất 4K/PNG &amp; đổi tên tùy chỉnh</li>
               </ul>
             </div>
 
@@ -335,7 +335,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 <li>• Xuất không giới hạn hàng nghìn ảnh &amp; video</li>
                 <li>• Ghép Đa Logo không giới hạn + Kéo-thả tự do</li>
                 <li>• Xuất Độ phân giải gốc 100%, chuẩn in 4K &amp; ảnh PNG</li>
-                <li>• Mở khóa AI lọc ảnh lỗi &amp; đổi tên hàng loạt</li>
+                <li>• Mở khóa xuất kèm Video gốc &amp; đổi tên hàng loạt</li>
               </ul>
             </div>
           </div>

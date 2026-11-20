@@ -301,10 +301,10 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
                 <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-semibold text-zinc-100">
-                    AI Lọc Ảnh Lỗi &amp; Xuất Hàng Loạt Siêu Tốc
+                    Chỉnh Màu, Cắt Ảnh &amp; Xuất Hàng Loạt Siêu Tốc
                   </div>
                   <p className="text-zinc-400 mt-0.5 leading-relaxed">
-                    Tự động phát hiện ảnh nhắm mắt, rung nhòe và xuất hàng nghìn ảnh giữ trọn độ nét gốc.
+                    Chọn lọc, cân chỉnh ánh sáng và xuất hàng nghìn ảnh &amp; video giữ trọn độ nét gốc.
                   </p>
                 </div>
               </div>

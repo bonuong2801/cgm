@@ -5,7 +5,6 @@ import path from 'path';
 import { Readable } from 'stream';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { handleAdminLicenses } from './api/admin/licenses.ts';
-import { POST as handleAiCull } from './api/ai/cull.ts';
 import { POST as handleCreateOrder } from './api/billing/create-order.ts';
 import { GET as handleOrderStatus } from './api/billing/order-status.ts';
 import { GET as handleBillingPlans } from './api/billing/plans.ts';
@@ -18,7 +17,6 @@ function localServerlessApiPlugin(): Plugin {
   const routes: Record<string, (req: Request) => Promise<Response>> = {
     '/api/drive/crawl': handleDriveCrawl,
     '/api/drive/stream': handleDriveStream,
-    '/api/ai/cull': handleAiCull,
     '/api/billing/plans': handleBillingPlans,
     '/api/billing/redeem': handleRedeemLicense,
     '/api/billing/create-order': handleCreateOrder,

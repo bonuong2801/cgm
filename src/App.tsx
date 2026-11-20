@@ -37,7 +37,6 @@ import {
   saveLogoPresets,
   saveWorkspaceSession,
 } from './services/sessionStore.ts';
-import { runSmartAiCullBatch } from './services/aiCullClient.ts';
 import { toUserFriendlyError } from './utils/userMessages.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { TopBar } from './components/TopBar.tsx';
@@ -84,7 +83,6 @@ function StudioWorkspace() {
   const itemsRef = useRef<DriveMediaItem[]>([]);
   const thumbCancelRef = useRef<(() => void) | null>(null);
   const lastCheckedIdRef = useRef<string | null>(null);
-  const aiAbortRef = useRef<AbortController | null>(null);
 
   const [driveUrlInput, setDriveUrlInput] = useState<string>('');
   const [folders, setFolders] = useState<DriveFolder[]>([]);
@@ -133,16 +131,11 @@ function StudioWorkspace() {
   // Undo History for Soft-Delete Culling
   const [rejectedHistoryIds, setRejectedHistoryIds] = useState<string[]>([]);
 
-  // Loading, AI Culling & Status Banners
+  // Loading & Status Banners
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingStatusText, setLoadingStatusText] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [aiCullProgress, setAiCullProgress] = useState<{
-    running: boolean;
-    done: number;
-    total: number;
-  } | null>(null);
   const [sessionHydrated, setSessionHydrated] = useState<boolean>(false);
 
   const showToast = useCallback((msg: string) => {
@@ -237,7 +230,6 @@ function StudioWorkspace() {
 
       if (quickFilter !== 'all') {
         if (quickFilter === 'rated') return item.rating > 0;
-        if (quickFilter === 'ai-flagged') return Boolean(item.aiReason);
         if (item.mediaType !== 'image') return false;
         const flags = isPhotoEdited(item.edit);
         if (quickFilter === 'edited') return flags.hasAnyEdit;
@@ -434,7 +426,6 @@ function StudioWorkspace() {
   // Clear workspace & release 100% of local ObjectURLs
   const handleClearAllWorkspace = useCallback(() => {
     thumbCancelRef.current?.();
-    aiAbortRef.current?.abort();
     revokeMediaObjectUrls(itemsRef.current);
 
     setFolders([]);
@@ -824,75 +815,6 @@ function StudioWorkspace() {
     return count;
   }, []);
 
-  // AI Smart Culling via `/api/ai/cull`
-  const handleRunAiCull = useCallback(async () => {
-    const targetPhotos = filteredItems.filter(
-      (i) => i.mediaType === 'image' && i.status === 'kept'
-    );
-    if (targetPhotos.length === 0) {
-      setErrorMessage('Không có ảnh nào trong danh sách hiện tại để AI phân tích.');
-      return;
-    }
-
-    const controller = new AbortController();
-    aiAbortRef.current = controller;
-    setErrorMessage(null);
-    setAiCullProgress({ running: true, done: 0, total: targetPhotos.length });
-
-    try {
-      const summary = await runSmartAiCullBatch(
-        targetPhotos,
-        (done, total) => setAiCullProgress({ running: true, done, total }),
-        (outcomes) => {
-          const outcomeMap = new Map(outcomes.map((o) => [o.id, o]));
-          const newlyRejectedIds: string[] = [];
-
-          setItems((prev) =>
-            prev.map((item) => {
-              const hit = outcomeMap.get(item.id);
-              if (!hit) return item;
-              if (hit.reject && item.status === 'kept') {
-                newlyRejectedIds.push(item.id);
-              }
-              return {
-                ...item,
-                status: hit.reject ? 'rejected' : item.status,
-                rating: item.rating > 0 ? item.rating : hit.rating,
-                aiReason: hit.reason || undefined,
-              };
-            })
-          );
-
-          if (newlyRejectedIds.length > 0) {
-            setRejectedHistoryIds((prev) => [...prev, ...newlyRejectedIds]);
-          }
-        },
-        controller.signal
-      );
-
-      showToast(
-        `AI đã chấm sao ${summary.totalAnalyzed} ảnh và tự động lọc ${summary.totalFlaggedReject} ảnh lỗi vào mục "Đã loại".`
-      );
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        setErrorMessage(
-          toUserFriendlyError(
-            err,
-            'Tính năng AI lọc ảnh hiện đang gặp sự cố hoặc tạm bảo trì. Vui lòng thử lại sau ít phút.'
-          )
-        );
-      }
-    } finally {
-      aiAbortRef.current = null;
-      setAiCullProgress(null);
-    }
-  }, [filteredItems, showToast]);
-
-  const handleCancelAiCull = useCallback(() => {
-    aiAbortRef.current?.abort();
-    setAiCullProgress(null);
-  }, []);
-
   // Register Global Studio Keyboard Shortcuts
   useKeyboardShortcuts({
     onPrevItem: () => handleNavigate(-1),
@@ -1007,9 +929,6 @@ function StudioWorkspace() {
         onImportLocalFiles={handleImportLocalFiles}
         onClearAllWorkspace={handleClearAllWorkspace}
         onOpenExportModal={() => setIsExportModalOpen(true)}
-        onRunAiCull={handleRunAiCull}
-        onCancelAiCull={handleCancelAiCull}
-        aiCullProgress={aiCullProgress}
         isLoading={isLoading}
         keptCount={totalKeptCount}
         totalCount={items.length}

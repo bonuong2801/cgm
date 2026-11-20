@@ -1,7 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  AlertTriangle,
   CheckSquare,
   Crop,
   FolderUp,
@@ -558,7 +557,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
             <option value="edited">Đã chỉnh sửa / gắn Logo</option>
             <option value="unwatermarked">Chưa gắn Logo</option>
             <option value="rated">Đã chấm sao (★)</option>
-            <option value="ai-flagged">AI gợi ý kiểm tra</option>
           </select>
 
           {/* Sort */}
@@ -781,7 +779,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                             </div>
 
                             {/* Bottom-Left Edit & Multi-Logo Indicators */}
-                            {(editFlags.hasAnyEdit || item.aiReason) && (
+                            {editFlags.hasAnyEdit && (
                               <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/80 text-[11px] text-zinc-200 flex items-center gap-2 z-10 max-w-[75%]">
                                 {editFlags.isCropped && (
                                   <span
@@ -809,17 +807,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                                       {editFlags.activeLogoCount > 1
                                         ? `${editFlags.activeLogoCount} Logo`
                                         : 'Logo'}
-                                    </span>
-                                  </span>
-                                )}
-                                {item.aiReason && (
-                                  <span
-                                    className="flex items-center gap-1 text-amber-300 truncate"
-                                    title={`Đánh giá AI: ${item.aiReason}`}
-                                  >
-                                    <AlertTriangle className="w-3 h-3 shrink-0" />
-                                    <span className="truncate">
-                                      {item.aiReason}
                                     </span>
                                   </span>
                                 )}

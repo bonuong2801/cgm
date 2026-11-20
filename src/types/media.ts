@@ -88,7 +88,6 @@ export interface DriveMediaItem {
   durationMillis?: number;
   status: CullingStatus;
   rating: StarRating;
-  aiReason?: string;
   isLocal?: boolean;
   rawFile?: File;
   edit: EditConfig;
@@ -104,8 +103,7 @@ export type QuickFilterOption =
   | 'all'
   | 'edited'
   | 'unwatermarked'
-  | 'rated'
-  | 'ai-flagged';
+  | 'rated';
 
 export type RenameMode = 'original' | 'custom';
 export type NumberingRule = 'per-folder' | 'continuous';

@@ -33,7 +33,6 @@ export interface PersistedDriveSession {
     durationMillis?: number;
     status: CullingStatus;
     rating: StarRating;
-    aiReason?: string;
     edit: EditConfig;
   }>;
   globalLogos: LogoLayer[];
