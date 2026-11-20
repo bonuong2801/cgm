@@ -19,6 +19,7 @@ import {
   getActiveLogos,
 } from '../types/media.ts';
 import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
+import { computeFrameGeometry } from '../utils/mediaMath.ts';
 import { LiveEditedPhotoPreview } from './VirtualMediaGrid.tsx';
 
 interface LightboxModalProps {
@@ -151,6 +152,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     item.downloadUrl.startsWith('/api/drive/stream');
   const driveEmbedUrl = `https://drive.google.com/file/d/${item.id}/preview`;
   const activeLogoCount = isVideo ? 0 : getActiveLogos(item.edit).length;
+  const previewGeom = isVideo
+    ? null
+    : computeFrameGeometry(item.width, item.height, item.edit, 0);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isVideo || e.button !== 0) return;
@@ -389,7 +393,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         </button>
 
         <div
-          className="max-w-5xl max-h-full w-full h-full flex items-center justify-center"
+          className="w-full h-full flex items-center justify-center"
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={handleDoubleClickPhoto}
         >
@@ -416,7 +420,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             )
           ) : (
             <div
-              className="max-w-full max-h-full flex items-center justify-center"
+              className="flex items-center justify-center"
               style={{
                 transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                 transformOrigin: 'center center',
@@ -448,7 +452,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                       }
                     : undefined
                 }
-                className="max-h-[78vh] max-w-[82vw] rounded-lg shadow-2xl border border-zinc-800"
+                style={{
+                  width: `min(82vw, calc(78vh * ${previewGeom?.cropW || 1600} / ${Math.max(1, previewGeom?.cropH || 1067)}))`,
+                }}
+                className="rounded-lg shadow-2xl border border-zinc-800"
               />
             </div>
           )}

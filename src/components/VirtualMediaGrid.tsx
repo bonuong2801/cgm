@@ -93,6 +93,7 @@ export const LiveEditedPhotoPreview: React.FC<{
   ) => void;
   onDimensionsDetected?: (itemId: string, w: number, h: number) => void;
   className?: string;
+  style?: React.CSSProperties;
 }> = ({
   item,
   useHighRes = false,
@@ -102,8 +103,14 @@ export const LiveEditedPhotoPreview: React.FC<{
   onInteractiveMoveLogo,
   onDimensionsDetected,
   className = '',
+  style,
 }) => {
-  const src = useHighRes ? item.previewUrl : item.gridThumbUrl;
+  const primarySrc = useHighRes ? item.previewUrl : item.gridThumbUrl;
+  const [fallbackSrc, setFallbackSrc] = useState<string | null>(null);
+  useEffect(() => {
+    setFallbackSrc(null);
+  }, [primarySrc]);
+  const src = fallbackSrc || primarySrc;
   const { edit } = item;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [draggingLogoId, setDraggingLogoId] = useState<string | null>(null);
@@ -185,6 +192,7 @@ export const LiveEditedPhotoPreview: React.FC<{
       ref={containerRef}
       className={`relative overflow-hidden bg-zinc-950 select-none ${className}`}
       style={{
+        ...style,
         aspectRatio: `${geom.cropW} / ${geom.cropH}`,
       }}
     >
@@ -202,8 +210,13 @@ export const LiveEditedPhotoPreview: React.FC<{
           src={src}
           alt={item.name}
           referrerPolicy="no-referrer"
-          loading="lazy"
+          loading={useHighRes ? 'eager' : 'lazy'}
           onLoad={handleImageLoaded}
+          onError={() => {
+            if (useHighRes && item.gridThumbUrl && src !== item.gridThumbUrl) {
+              setFallbackSrc(item.gridThumbUrl);
+            }
+          }}
           className="max-w-none select-none pointer-events-none block"
           style={
             isPerpendicular
