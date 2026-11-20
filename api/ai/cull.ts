@@ -3,8 +3,13 @@ import {
   verifyRequestUser,
 } from '../_lib/supabaseAdmin.ts';
 
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
+const GEMINI_API_BASE =
+  'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_MODEL_CANDIDATES = [
+  'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3-flash-preview',
+];
 const MAX_BATCH_PHOTOS = 12;
 const MAX_BASE64_LEN = 350_000; // ~250KB max per thumbnail
 
@@ -125,50 +130,62 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const upstream = await fetch(
-      `${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: request.signal,
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'OBJECT',
-              properties: {
-                results: {
-                  type: 'ARRAY',
-                  items: {
-                    type: 'OBJECT',
-                    properties: {
-                      id: { type: 'STRING' },
-                      reject: { type: 'BOOLEAN' },
-                      rating: { type: 'INTEGER' },
-                      reason: { type: 'STRING' },
-                    },
-                    required: ['id', 'reject', 'rating', 'reason'],
-                  },
+    const payload = JSON.stringify({
+      contents: [{ role: 'user', parts }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            results: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  id: { type: 'STRING' },
+                  reject: { type: 'BOOLEAN' },
+                  rating: { type: 'INTEGER' },
+                  reason: { type: 'STRING' },
                 },
+                required: ['id', 'reject', 'rating', 'reason'],
               },
-              required: ['results'],
             },
           },
-        }),
-      }
-    );
+          required: ['results'],
+        },
+      },
+    });
 
-    if (!upstream.ok) {
+    let upstream: Response | null = null;
+    for (const model of GEMINI_MODEL_CANDIDATES) {
+      const candidateRes = await fetch(
+        `${GEMINI_API_BASE}/${model}:generateContent?key=${encodeURIComponent(
+          apiKey
+        )}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: request.signal,
+          body: payload,
+        }
+      );
+      upstream = candidateRes;
+      if (candidateRes.ok) break;
+      // Only fall back to next model if current model is unavailable/overloaded
+      if (candidateRes.status !== 404 && candidateRes.status !== 503) break;
+    }
+
+    if (!upstream || !upstream.ok) {
+      const status = upstream?.status || 502;
       return jsonResponse(
         {
           error:
-            upstream.status === 429
+            status === 429
               ? 'Hệ thống AI đang có nhiều người sử dụng cùng lúc. Vui lòng đợi ít phút rồi thử lại.'
               : 'Tính năng AI lọc ảnh hiện đang gặp sự cố kết nối. Vui lòng thử lại sau.',
         },
-        upstream.status >= 500 ? 502 : upstream.status
+        status >= 500 ? 502 : status
       );
     }
 
