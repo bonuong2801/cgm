@@ -4,7 +4,7 @@ import {
 } from '../_lib/supabaseAdmin.ts';
 
 const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
 const MAX_BATCH_PHOTOS = 12;
 const MAX_BASE64_LEN = 350_000; // ~250KB max per thumbnail
 
