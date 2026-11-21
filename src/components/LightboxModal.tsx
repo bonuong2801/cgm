@@ -436,6 +436,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               <LiveEditedPhotoPreview
                 item={item}
                 useHighRes={true}
+                preferOriginal={!isVideo && zoom > 1.05}
                 showOriginal={compareOriginal}
                 activeLogoId={selectedLogoId}
                 onSelectLogoLayer={setSelectedLogoId}

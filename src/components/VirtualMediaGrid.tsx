@@ -4,9 +4,11 @@ import {
   CheckSquare,
   Crop,
   FolderUp,
+  ImageOff,
   ImagePlus,
   Maximize2,
   Play,
+  RefreshCw,
   RotateCcw,
   Search,
   Sliders,
@@ -24,11 +26,14 @@ import {
   getActiveLogos,
   isPhotoEdited,
 } from '../types/media.ts';
+import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 import {
   buildCssFilterString,
+  buildImageFallbackSources,
   computeFrameGeometry,
   computeSmartLogoPlacement,
   computeWarmthTint,
+  resolveDetectedDimensions,
 } from '../utils/mediaMath.ts';
 import { extractFilesFromDataTransfer } from '../services/localFileLoader.ts';
 
@@ -72,6 +77,19 @@ export function formatVideoDuration(durationMillis?: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function appendRetryParam(url: string, attempt: number): string {
+  if (
+    !url ||
+    attempt <= 0 ||
+    url.startsWith('blob:') ||
+    url.startsWith('data:')
+  ) {
+    return url;
+  }
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}cgm_r=${attempt}`;
+}
+
 /**
  * Renders an exact 1:1 live preview of a photo including:
  * - Unified Rotation (0/90/180/270) + Resolution-Independent Crop framing
@@ -82,6 +100,7 @@ export function formatVideoDuration(durationMillis?: number): string {
 export const LiveEditedPhotoPreview: React.FC<{
   item: DriveMediaItem;
   useHighRes?: boolean;
+  preferOriginal?: boolean;
   showOriginal?: boolean;
   activeLogoId?: string | null;
   onSelectLogoLayer?: (logoId: string) => void;
@@ -96,6 +115,7 @@ export const LiveEditedPhotoPreview: React.FC<{
 }> = ({
   item,
   useHighRes = false,
+  preferOriginal = false,
   showOriginal = false,
   activeLogoId = null,
   onSelectLogoLayer,
@@ -104,12 +124,126 @@ export const LiveEditedPhotoPreview: React.FC<{
   className = '',
   style,
 }) => {
-  const primarySrc = useHighRes ? item.previewUrl : item.gridThumbUrl;
-  const [fallbackSrc, setFallbackSrc] = useState<string | null>(null);
+  const streamUrl = useMemo(
+    () =>
+      item.isLocal ? item.downloadUrl : attachAuthToStreamUrl(item.downloadUrl),
+    [item.isLocal, item.downloadUrl]
+  );
+  const candidateSources = useMemo(
+    () =>
+      buildImageFallbackSources({
+        id: item.id,
+        mediaType: item.mediaType,
+        isLocal: item.isLocal,
+        gridThumbUrl: item.gridThumbUrl,
+        previewUrl: item.previewUrl,
+        streamUrl,
+        useHighRes,
+      }),
+    [
+      item.id,
+      item.mediaType,
+      item.isLocal,
+      item.gridThumbUrl,
+      item.previewUrl,
+      streamUrl,
+      useHighRes,
+    ]
+  );
+
+  const [sourceIndex, setSourceIndex] = useState<number>(0);
+  const [retryAttempt, setRetryAttempt] = useState<number>(0);
+  const [loadFailed, setLoadFailed] = useState<boolean>(false);
+  const [loadedOriginalUrl, setLoadedOriginalUrl] = useState<string | null>(
+    null
+  );
+  const retryTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
-    setFallbackSrc(null);
-  }, [primarySrc]);
-  const src = fallbackSrc || primarySrc;
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    setSourceIndex(0);
+    setRetryAttempt(0);
+    setLoadFailed(false);
+    setLoadedOriginalUrl(null);
+  }, [item.id, useHighRes, item.gridThumbUrl, item.previewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !preferOriginal ||
+      item.isLocal ||
+      item.mediaType !== 'image' ||
+      !streamUrl ||
+      loadedOriginalUrl
+    ) {
+      return;
+    }
+
+    if (candidateSources[sourceIndex] === streamUrl) {
+      setLoadedOriginalUrl(streamUrl);
+      return;
+    }
+
+    let cancelled = false;
+    const preloader = new Image();
+    preloader.referrerPolicy = 'no-referrer';
+    preloader.onload = () => {
+      if (cancelled) return;
+      setLoadedOriginalUrl(streamUrl);
+      if (
+        onDimensionsDetected &&
+        preloader.naturalWidth > 0 &&
+        preloader.naturalHeight > 0
+      ) {
+        const resolved = resolveDetectedDimensions(
+          item.width,
+          item.height,
+          preloader.naturalWidth,
+          preloader.naturalHeight
+        );
+        if (resolved) {
+          onDimensionsDetected(item.id, resolved.width, resolved.height);
+        }
+      }
+    };
+    preloader.onerror = () => {
+      // Keep sharp thumbnail preview on screen if original stream fails
+    };
+    preloader.src = streamUrl;
+
+    return () => {
+      cancelled = true;
+      preloader.onload = null;
+      preloader.onerror = null;
+    };
+  }, [
+    preferOriginal,
+    item.id,
+    item.isLocal,
+    item.mediaType,
+    item.width,
+    item.height,
+    streamUrl,
+    loadedOriginalUrl,
+    candidateSources,
+    sourceIndex,
+    onDimensionsDetected,
+  ]);
+
+  const activeCandidate = candidateSources[sourceIndex] || '';
+  const src =
+    loadedOriginalUrl || appendRetryParam(activeCandidate, retryAttempt);
   const { edit } = item;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [draggingLogoId, setDraggingLogoId] = useState<string | null>(null);
@@ -125,14 +259,55 @@ export const LiveEditedPhotoPreview: React.FC<{
   const handleImageLoaded = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const natW = e.currentTarget.naturalWidth;
     const natH = e.currentTarget.naturalHeight;
-    if (
-      onDimensionsDetected &&
-      natW > 0 &&
-      natH > 0 &&
-      (natW !== item.width || natH !== item.height)
-    ) {
-      onDimensionsDetected(item.id, natW, natH);
+    if (onDimensionsDetected && natW > 0 && natH > 0) {
+      const resolved = resolveDetectedDimensions(
+        item.width,
+        item.height,
+        natW,
+        natH
+      );
+      if (resolved) {
+        onDimensionsDetected(item.id, resolved.width, resolved.height);
+      }
     }
+  };
+
+  const handleImageError = () => {
+    if (loadedOriginalUrl) {
+      setLoadedOriginalUrl(null);
+      return;
+    }
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (sourceIndex + 1 < candidateSources.length) {
+      const nextIdx = sourceIndex + 1;
+      if (nextIdx === 1) {
+        setSourceIndex(1);
+      } else {
+        retryTimerRef.current = window.setTimeout(
+          () => {
+            retryTimerRef.current = null;
+            setSourceIndex(nextIdx);
+          },
+          300 + Math.floor(Math.random() * 450)
+        );
+      }
+      return;
+    }
+    if (!item.isLocal && retryAttempt < 1) {
+      retryTimerRef.current = window.setTimeout(
+        () => {
+          retryTimerRef.current = null;
+          setRetryAttempt(1);
+          setSourceIndex(0);
+        },
+        900 + Math.floor(Math.random() * 700)
+      );
+      return;
+    }
+    setLoadFailed(true);
   };
 
   const handleLogoPointerDown = (
@@ -196,50 +371,69 @@ export const LiveEditedPhotoPreview: React.FC<{
       }}
     >
       {/* Unified Rotated + Cropped Sheet */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          width: `${(100 / Math.max(1, cp.width)) * 100}%`,
-          height: `${(100 / Math.max(1, cp.height)) * 100}%`,
-          left: `${-(cp.x / Math.max(1, cp.width)) * 100}%`,
-          top: `${-(cp.y / Math.max(1, cp.height)) * 100}%`,
-        }}
-      >
-        <img
-          src={src}
-          alt={item.name}
-          referrerPolicy="no-referrer"
-          loading={useHighRes ? 'eager' : 'lazy'}
-          onLoad={handleImageLoaded}
-          onError={() => {
-            if (useHighRes && item.gridThumbUrl && src !== item.gridThumbUrl) {
-              setFallbackSrc(item.gridThumbUrl);
-            }
+      {loadFailed || !src ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-950/95 p-3 text-center z-20">
+          <ImageOff className="w-6 h-6 text-zinc-600" aria-hidden="true" />
+          <span className="text-[11px] font-medium text-zinc-400">
+            Không tải được ảnh
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLoadFailed(false);
+              setRetryAttempt((n) => n + 1);
+              setSourceIndex(0);
+            }}
+            className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-[11px] text-zinc-200 flex items-center gap-1 cursor-pointer"
+          >
+            <RefreshCw className="w-3 h-3" aria-hidden="true" />
+            <span>Thử lại</span>
+          </button>
+        </div>
+      ) : (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            width: `${(100 / Math.max(1, cp.width)) * 100}%`,
+            height: `${(100 / Math.max(1, cp.height)) * 100}%`,
+            left: `${-(cp.x / Math.max(1, cp.width)) * 100}%`,
+            top: `${-(cp.y / Math.max(1, cp.height)) * 100}%`,
           }}
-          className="max-w-none select-none pointer-events-none block"
-          style={
-            isPerpendicular
-              ? {
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  width: `${(geom.rotH / Math.max(1, geom.rotW)) * 100}%`,
-                  height: `${(geom.rotW / Math.max(1, geom.rotH)) * 100}%`,
-                  transform: `translate(-50%, -50%) rotate(${edit.rotation}deg)`,
-                  filter: cssFilter,
-                }
-              : {
-                  width: '100%',
-                  height: '100%',
-                  transform:
-                    edit.rotation !== 0
-                      ? `rotate(${edit.rotation}deg)`
-                      : undefined,
-                  filter: cssFilter,
-                }
-          }
-        />
-      </div>
+        >
+          <img
+            src={src}
+            alt={item.name}
+            referrerPolicy="no-referrer"
+            loading={useHighRes ? 'eager' : 'lazy'}
+            decoding="async"
+            onLoad={handleImageLoaded}
+            onError={handleImageError}
+            className="max-w-none select-none pointer-events-none block"
+            style={
+              isPerpendicular
+                ? {
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: `${(geom.rotH / Math.max(1, geom.rotW)) * 100}%`,
+                    height: `${(geom.rotW / Math.max(1, geom.rotH)) * 100}%`,
+                    transform: `translate(-50%, -50%) rotate(${edit.rotation}deg)`,
+                    filter: cssFilter,
+                  }
+                : {
+                    width: '100%',
+                    height: '100%',
+                    transform:
+                      edit.rotation !== 0
+                        ? `rotate(${edit.rotation}deg)`
+                        : undefined,
+                    filter: cssFilter,
+                  }
+            }
+          />
+        </div>
+      )}
 
       {/* Natural Color Temperature Tint (Warm / Cool) */}
       {warmthTint && (
@@ -316,6 +510,43 @@ export const LiveEditedPhotoPreview: React.FC<{
         </div>
       )}
     </div>
+  );
+};
+
+const VideoThumbnailImage: React.FC<{ item: DriveMediaItem }> = ({ item }) => {
+  const candidates = useMemo(
+    () =>
+      buildImageFallbackSources({
+        id: item.id,
+        mediaType: 'video',
+        isLocal: item.isLocal,
+        gridThumbUrl: item.gridThumbUrl,
+        previewUrl: item.previewUrl,
+        useHighRes: false,
+      }),
+    [item.id, item.isLocal, item.gridThumbUrl, item.previewUrl]
+  );
+  const [sourceIndex, setSourceIndex] = useState<number>(0);
+
+  useEffect(() => {
+    setSourceIndex(0);
+  }, [item.id, item.gridThumbUrl]);
+
+  const src = candidates[sourceIndex];
+  if (!src || sourceIndex >= candidates.length) {
+    return null;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={item.name}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      decoding="async"
+      onError={() => setSourceIndex((prev) => prev + 1)}
+      className="w-full h-full object-cover select-none pointer-events-none"
+    />
   );
 };
 
@@ -687,13 +918,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                           <div className="relative w-full aspect-4/3 bg-zinc-950 flex items-center justify-center overflow-hidden">
                             {item.mediaType === 'video' ? (
                               <>
-                                <img
-                                  src={item.gridThumbUrl}
-                                  alt={item.name}
-                                  referrerPolicy="no-referrer"
-                                  loading="lazy"
-                                  className="w-full h-full object-cover select-none pointer-events-none"
-                                />
+                                <VideoThumbnailImage item={item} />
                                 <div className="absolute inset-0 bg-black/30 group-hover:bg-black/45 transition-colors flex items-center justify-center">
                                   <div className="w-11 h-11 rounded-full bg-zinc-900/85 border border-zinc-700 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
                                     <Play className="w-5 h-5 fill-white ml-0.5" />

@@ -236,3 +236,174 @@ export function computeSmartLogoPlacement(
     height: Math.max(1, Math.round(targetLogoHeight)),
   };
 }
+
+/**
+ * Builds stable, non-expiring Google Drive thumbnail URLs for grid and lightbox previews.
+ */
+export function buildStableDriveThumbnailUrls(fileId: string): {
+  gridThumbUrl: string;
+  previewUrl: string;
+} {
+  const encodedId = encodeURIComponent(fileId);
+  return {
+    gridThumbUrl: `https://drive.google.com/thumbnail?id=${encodedId}&sz=w800`,
+    previewUrl: `https://drive.google.com/thumbnail?id=${encodedId}&sz=w2400`,
+  };
+}
+
+/**
+ * Resolves camera image/video dimensions with Drive EXIF rotation (90/270 deg swap).
+ */
+export function resolveOrientedMediaDimensions(
+  rawWidth?: number,
+  rawHeight?: number,
+  exifRotation?: number
+): { width: number; height: number } {
+  const w = rawWidth && rawWidth > 0 ? rawWidth : 1600;
+  const h = rawHeight && rawHeight > 0 ? rawHeight : 1067;
+  if (exifRotation === 1 || exifRotation === 3) {
+    return { width: h, height: w };
+  }
+  return { width: w, height: h };
+}
+
+/**
+ * Upgrades expired lh3 or undersized legacy Drive thumbnail URLs (e.g. from IndexedDB)
+ * to stable non-expiring URLs while leaving local blob:/data: URLs untouched.
+ */
+export function normalizeDriveMediaUrls<
+  T extends {
+    id: string;
+    isLocal?: boolean;
+    gridThumbUrl: string;
+    previewUrl: string;
+  },
+>(item: T): T {
+  if (
+    item.isLocal ||
+    !item.id ||
+    item.gridThumbUrl.startsWith('blob:') ||
+    item.gridThumbUrl.startsWith('data:')
+  ) {
+    return item;
+  }
+
+  const needsUpgrade = (url: string, expectedSize: string): boolean =>
+    !url ||
+    url.includes('googleusercontent.com') ||
+    (url.includes('drive.google.com/thumbnail') &&
+      !url.includes(`sz=${expectedSize}`));
+
+  if (
+    needsUpgrade(item.gridThumbUrl, 'w800') ||
+    needsUpgrade(item.previewUrl, 'w2400')
+  ) {
+    return {
+      ...item,
+      ...buildStableDriveThumbnailUrls(item.id),
+    };
+  }
+
+  return item;
+}
+
+function dedupeTruthyUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const url of urls) {
+    if (url && !seen.has(url)) {
+      seen.add(url);
+      out.push(url);
+    }
+  }
+  return out;
+}
+
+/**
+ * Builds an ordered, deduplicated fallback chain for <img> rendering of Drive or local media.
+ */
+export function buildImageFallbackSources(params: {
+  id: string;
+  mediaType: 'image' | 'video';
+  isLocal?: boolean;
+  gridThumbUrl: string;
+  previewUrl: string;
+  streamUrl?: string;
+  useHighRes: boolean;
+}): string[] {
+  if (params.isLocal) {
+    return dedupeTruthyUrls([
+      params.useHighRes ? params.previewUrl : params.gridThumbUrl,
+      params.previewUrl,
+      params.gridThumbUrl,
+    ]);
+  }
+
+  const encodedId = encodeURIComponent(params.id);
+  const lh3Direct = (size: string) =>
+    `https://lh3.googleusercontent.com/d/${encodedId}=${size}`;
+  const driveThumb = (size: string) =>
+    `https://drive.google.com/thumbnail?id=${encodedId}&sz=${size}`;
+  const imageStreamFallback =
+    params.mediaType === 'image' ? params.streamUrl || '' : '';
+
+  if (params.useHighRes) {
+    return dedupeTruthyUrls([
+      params.previewUrl,
+      lh3Direct('w2400'),
+      driveThumb('w1600'),
+      imageStreamFallback,
+      params.gridThumbUrl,
+    ]);
+  }
+
+  return dedupeTruthyUrls([
+    params.gridThumbUrl,
+    lh3Direct('w800'),
+    driveThumb('w480'),
+    imageStreamFallback,
+  ]);
+}
+
+/**
+ * Decides whether a loaded <img>'s naturalWidth/naturalHeight should update stored item dimensions
+ * without letting low-res grid thumbnails overwrite full camera metadata.
+ */
+export function resolveDetectedDimensions(
+  currentW: number,
+  currentH: number,
+  natW: number,
+  natH: number
+): { width: number; height: number } | null {
+  if (natW <= 0 || natH <= 0 || (currentW === natW && currentH === natH)) {
+    return null;
+  }
+
+  if (
+    (currentW === 1600 && currentH === 1067) ||
+    (currentW === 1800 && currentH === 1200)
+  ) {
+    return { width: natW, height: natH };
+  }
+
+  if (natW * natH > currentW * currentH) {
+    return { width: natW, height: natH };
+  }
+
+  const curRatio = currentW / Math.max(1, currentH);
+  const natRatio = natW / Math.max(1, natH);
+  const ratioDiff =
+    Math.abs(curRatio - natRatio) / Math.max(curRatio, natRatio);
+  if (ratioDiff <= 0.06) {
+    return null;
+  }
+
+  const swappedRatio = currentH / Math.max(1, currentW);
+  const swappedDiff =
+    Math.abs(swappedRatio - natRatio) / Math.max(swappedRatio, natRatio);
+  if (swappedDiff <= 0.06) {
+    return { width: currentH, height: currentW };
+  }
+
+  return { width: natW, height: natH };
+}

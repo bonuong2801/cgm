@@ -3,6 +3,10 @@ import {
   isServerSupabaseConfigured,
   verifyRequestUser,
 } from '../_lib/supabaseAdmin.ts';
+import {
+  buildStableDriveThumbnailUrls,
+  resolveOrientedMediaDimensions,
+} from '../../src/utils/mediaMath.ts';
 
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -15,10 +19,10 @@ interface RawDriveFile {
   id: string;
   name: string;
   mimeType: string;
-  thumbnailLink?: string;
   imageMediaMetadata?: {
     width?: number;
     height?: number;
+    rotation?: number;
   };
   videoMediaMetadata?: {
     width?: number;
@@ -78,28 +82,6 @@ function getServerDriveApiKey(): string {
   return '';
 }
 
-function buildThumbnailUrls(
-  fileId: string,
-  thumbnailLink?: string
-): { gridThumbUrl: string; previewUrl: string } {
-  if (thumbnailLink) {
-    if (/=s\d+/.test(thumbnailLink)) {
-      return {
-        gridThumbUrl: thumbnailLink.replace(/=s\d+.*$/, '=s480'),
-        previewUrl: thumbnailLink.replace(/=s\d+.*$/, '=s2400'),
-      };
-    }
-    return {
-      gridThumbUrl: `${thumbnailLink}=s480`,
-      previewUrl: `${thumbnailLink}=s2400`,
-    };
-  }
-  return {
-    gridThumbUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w480`,
-    previewUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w2400`,
-  };
-}
-
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -149,7 +131,7 @@ async function fetchAllFolderChildren(
 
   const query = `'${parentId}' in parents and trashed = false`;
   const fields =
-    'nextPageToken,files(id,name,mimeType,thumbnailLink,imageMediaMetadata(width,height),videoMediaMetadata(width,height,durationMillis))';
+    'nextPageToken,files(id,name,mimeType,imageMediaMetadata(width,height,rotation),videoMediaMetadata(width,height,durationMillis))';
 
   do {
     const params = new URLSearchParams({
@@ -220,14 +202,12 @@ function mapRawToDto(
   const isVideo = raw.mimeType.startsWith('video/');
   if (!isImage && !isVideo) return null;
 
-  const { gridThumbUrl, previewUrl } = buildThumbnailUrls(
-    raw.id,
-    raw.thumbnailLink
+  const { gridThumbUrl, previewUrl } = buildStableDriveThumbnailUrls(raw.id);
+  const { width, height } = resolveOrientedMediaDimensions(
+    raw.imageMediaMetadata?.width || raw.videoMediaMetadata?.width,
+    raw.imageMediaMetadata?.height || raw.videoMediaMetadata?.height,
+    raw.imageMediaMetadata?.rotation
   );
-  const width =
-    raw.imageMediaMetadata?.width || raw.videoMediaMetadata?.width || 1600;
-  const height =
-    raw.imageMediaMetadata?.height || raw.videoMediaMetadata?.height || 1067;
   const durationRaw = raw.videoMediaMetadata?.durationMillis;
 
   return {

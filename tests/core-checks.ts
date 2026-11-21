@@ -17,9 +17,14 @@ import {
 } from '../src/utils/entitlements.ts';
 import { generateGoogleNoncePair } from '../src/lib/supabaseClient.ts';
 import {
+  buildImageFallbackSources,
+  buildStableDriveThumbnailUrls,
   computeFrameGeometry,
   computeSmartLogoPlacement,
   computeWarmthTint,
+  normalizeDriveMediaUrls,
+  resolveDetectedDimensions,
+  resolveOrientedMediaDimensions,
   sanitizeFileToken,
   sanitizeFolderNameForDisk,
 } from '../src/utils/mediaMath.ts';
@@ -322,6 +327,154 @@ async function runCoreChecks() {
     hashedNonce,
     crypto.createHash('sha256').update(nonce).digest('hex')
   );
+
+  // 11. Google Drive Stable Thumbnail URLs, Fallback Chains & Dimension Preservation
+  const stableThumbs = buildStableDriveThumbnailUrls('abc123_DriveFileId');
+  assert.equal(
+    stableThumbs.gridThumbUrl,
+    'https://drive.google.com/thumbnail?id=abc123_DriveFileId&sz=w800'
+  );
+  assert.equal(
+    stableThumbs.previewUrl,
+    'https://drive.google.com/thumbnail?id=abc123_DriveFileId&sz=w2400'
+  );
+
+  assert.deepEqual(resolveOrientedMediaDimensions(6000, 4000, 0), {
+    width: 6000,
+    height: 4000,
+  });
+  assert.deepEqual(resolveOrientedMediaDimensions(6000, 4000, 1), {
+    width: 4000,
+    height: 6000,
+  });
+  assert.deepEqual(resolveOrientedMediaDimensions(6000, 4000, 3), {
+    width: 4000,
+    height: 6000,
+  });
+  assert.deepEqual(resolveOrientedMediaDimensions(undefined, undefined), {
+    width: 1600,
+    height: 1067,
+  });
+
+  const legacyDriveItem = normalizeDriveMediaUrls({
+    id: 'drive_legacy_1',
+    isLocal: false,
+    gridThumbUrl:
+      'https://lh3.googleusercontent.com/drive-storage/expired-token=s480',
+    previewUrl:
+      'https://lh3.googleusercontent.com/drive-storage/expired-token=s2400',
+  });
+  assert.equal(
+    legacyDriveItem.gridThumbUrl,
+    'https://drive.google.com/thumbnail?id=drive_legacy_1&sz=w800'
+  );
+  assert.equal(
+    legacyDriveItem.previewUrl,
+    'https://drive.google.com/thumbnail?id=drive_legacy_1&sz=w2400'
+  );
+
+  const undersizedDriveItem = normalizeDriveMediaUrls({
+    id: 'drive_w480_1',
+    isLocal: false,
+    gridThumbUrl: 'https://drive.google.com/thumbnail?id=drive_w480_1&sz=w480',
+    previewUrl: 'https://drive.google.com/thumbnail?id=drive_w480_1&sz=w2400',
+  });
+  assert.equal(
+    undersizedDriveItem.gridThumbUrl,
+    'https://drive.google.com/thumbnail?id=drive_w480_1&sz=w800'
+  );
+
+  const localBlobItem = normalizeDriveMediaUrls({
+    id: 'local_1',
+    isLocal: true,
+    gridThumbUrl: 'blob:https://cgmtop1cg.vercel.app/1234',
+    previewUrl: 'blob:https://cgmtop1cg.vercel.app/1234',
+  });
+  assert.equal(
+    localBlobItem.gridThumbUrl,
+    'blob:https://cgmtop1cg.vercel.app/1234'
+  );
+
+  const gridFallback = buildImageFallbackSources({
+    id: 'file_xyz',
+    mediaType: 'image',
+    isLocal: false,
+    gridThumbUrl: 'https://drive.google.com/thumbnail?id=file_xyz&sz=w800',
+    previewUrl: 'https://drive.google.com/thumbnail?id=file_xyz&sz=w2400',
+    streamUrl: '/api/drive/stream?id=file_xyz&token=jwt',
+    useHighRes: false,
+  });
+  assert.deepEqual(gridFallback, [
+    'https://drive.google.com/thumbnail?id=file_xyz&sz=w800',
+    'https://lh3.googleusercontent.com/d/file_xyz=w800',
+    'https://drive.google.com/thumbnail?id=file_xyz&sz=w480',
+    '/api/drive/stream?id=file_xyz&token=jwt',
+  ]);
+
+  const highResFallback = buildImageFallbackSources({
+    id: 'file_xyz',
+    mediaType: 'image',
+    isLocal: false,
+    gridThumbUrl: 'https://drive.google.com/thumbnail?id=file_xyz&sz=w800',
+    previewUrl: 'https://drive.google.com/thumbnail?id=file_xyz&sz=w2400',
+    streamUrl: '/api/drive/stream?id=file_xyz&token=jwt',
+    useHighRes: true,
+  });
+  assert.deepEqual(highResFallback, [
+    'https://drive.google.com/thumbnail?id=file_xyz&sz=w2400',
+    'https://lh3.googleusercontent.com/d/file_xyz=w2400',
+    'https://drive.google.com/thumbnail?id=file_xyz&sz=w1600',
+    '/api/drive/stream?id=file_xyz&token=jwt',
+    'https://drive.google.com/thumbnail?id=file_xyz&sz=w800',
+  ]);
+
+  const videoGridFallback = buildImageFallbackSources({
+    id: 'vid_xyz',
+    mediaType: 'video',
+    isLocal: false,
+    gridThumbUrl: 'https://drive.google.com/thumbnail?id=vid_xyz&sz=w800',
+    previewUrl: 'https://drive.google.com/thumbnail?id=vid_xyz&sz=w2400',
+    streamUrl: '/api/drive/stream?id=vid_xyz&token=jwt',
+    useHighRes: false,
+  });
+  assert.equal(
+    videoGridFallback.some((u) => u.includes('/api/drive/stream')),
+    false,
+    'Video <img> fallback chain must never include video binary stream URL'
+  );
+
+  const localFallback = buildImageFallbackSources({
+    id: 'local_1',
+    mediaType: 'image',
+    isLocal: true,
+    gridThumbUrl: 'blob:thumb',
+    previewUrl: 'blob:full',
+    streamUrl: 'blob:full',
+    useHighRes: false,
+  });
+  assert.deepEqual(localFallback, ['blob:thumb', 'blob:full']);
+
+  // Preserve full camera metadata when thumbnail loads with smaller same-ratio pixels
+  assert.equal(resolveDetectedDimensions(6000, 4000, 800, 533), null);
+  // Correct 90-degree EXIF orientation without losing camera resolution
+  assert.deepEqual(resolveDetectedDimensions(6000, 4000, 533, 800), {
+    width: 4000,
+    height: 6000,
+  });
+  // Replace default Drive & local placeholders
+  assert.deepEqual(resolveDetectedDimensions(1600, 1067, 800, 1200), {
+    width: 800,
+    height: 1200,
+  });
+  assert.deepEqual(resolveDetectedDimensions(1800, 1200, 800, 533), {
+    width: 800,
+    height: 533,
+  });
+  // Upgrade when full original loads with higher pixel count
+  assert.deepEqual(resolveDetectedDimensions(2400, 1600, 6000, 4000), {
+    width: 6000,
+    height: 4000,
+  });
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }

@@ -1,7 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import Cropper, { type Area, type Point } from 'react-easy-crop';
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react';
 import type { CropArea, DriveMediaItem } from '../types/media.ts';
+import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
+import { buildImageFallbackSources } from '../utils/mediaMath.ts';
 
 interface CropModalProps {
   item: DriveMediaItem | null;
@@ -83,6 +85,30 @@ export const CropModal: React.FC<CropModalProps> = ({
   const [latestAreaPixels, setLatestAreaPixels] = useState<CropArea | null>(
     null
   );
+  const [cropSrcIndex, setCropSrcIndex] = useState<number>(0);
+
+  const cropImageSources = useMemo(() => {
+    if (!item || item.mediaType !== 'image') return [];
+    const streamUrl = item.isLocal
+      ? item.downloadUrl
+      : attachAuthToStreamUrl(item.downloadUrl);
+    return buildImageFallbackSources({
+      id: item.id,
+      mediaType: item.mediaType,
+      isLocal: item.isLocal,
+      gridThumbUrl: item.gridThumbUrl,
+      previewUrl: item.previewUrl,
+      streamUrl,
+      useHighRes: true,
+    });
+  }, [
+    item?.id,
+    item?.mediaType,
+    item?.isLocal,
+    item?.gridThumbUrl,
+    item?.previewUrl,
+    item?.downloadUrl,
+  ]);
 
   // Sync crop modal state whenever a different photo is opened
   useEffect(() => {
@@ -90,6 +116,7 @@ export const CropModal: React.FC<CropModalProps> = ({
     setSelectedPresetLabel(item.edit.aspectRatioLabel || 'Tỷ lệ gốc');
     setCrop({ x: 0, y: 0 });
     setZoom(1);
+    setCropSrcIndex(0);
     setFreeWidthRatio(effectiveW / Math.max(1, effectiveH));
     setLatestAreaPercent(item.edit.cropPercent);
     setLatestAreaPixels(item.edit.croppedAreaPixels);
@@ -177,7 +204,7 @@ export const CropModal: React.FC<CropModalProps> = ({
         {/* Interactive Cropper Canvas */}
         <div className="relative h-[52vh] bg-zinc-950 w-full">
           <Cropper
-            image={item.previewUrl}
+            image={cropImageSources[cropSrcIndex] || item.previewUrl}
             crop={crop}
             zoom={zoom}
             rotation={item.edit.rotation}
@@ -185,6 +212,13 @@ export const CropModal: React.FC<CropModalProps> = ({
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
+            mediaProps={{
+              referrerPolicy: 'no-referrer',
+              onError: () =>
+                setCropSrcIndex((idx) =>
+                  idx + 1 < cropImageSources.length ? idx + 1 : idx
+                ),
+            }}
             showGrid={true}
           />
         </div>

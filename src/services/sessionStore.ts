@@ -7,6 +7,7 @@ import type {
   LogoSetPreset,
   StarRating,
 } from '../types/media.ts';
+import { normalizeDriveMediaUrls } from '../utils/mediaMath.ts';
 
 const DB_NAME = 'cgm_studio_db';
 const DB_VERSION = 1;
@@ -86,7 +87,12 @@ async function idbSet<T>(key: string, value: T): Promise<void> {
 }
 
 export async function loadSavedSession(): Promise<PersistedDriveSession | null> {
-  return idbGet<PersistedDriveSession>(KEY_SESSION);
+  const session = await idbGet<PersistedDriveSession>(KEY_SESSION);
+  if (!session?.items?.length) return session;
+  return {
+    ...session,
+    items: session.items.map((item) => normalizeDriveMediaUrls(item)),
+  };
 }
 
 export async function saveWorkspaceSession(params: {

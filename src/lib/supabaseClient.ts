@@ -79,7 +79,11 @@ export function getAuthHeaders(): Record<string, string> {
  * so HTML5 `<video>` tags and background Web Workers remain authenticated across token refreshes.
  */
 export function attachAuthToStreamUrl(url: string): string {
-  if (!latestAccessToken || !url.startsWith('/api/drive/stream')) {
+  if (
+    !latestAccessToken ||
+    !url.startsWith('/api/drive/stream') ||
+    url.includes('token=')
+  ) {
     return url;
   }
   const sep = url.includes('?') ? '&' : '?';

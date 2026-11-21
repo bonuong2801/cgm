@@ -6,6 +6,11 @@ import {
   cloneLogoLayers,
 } from '../types/media.ts';
 import { getAuthHeaders } from '../lib/supabaseClient.ts';
+import {
+  buildStableDriveThumbnailUrls,
+  normalizeDriveMediaUrls,
+  resolveOrientedMediaDimensions,
+} from '../utils/mediaMath.ts';
 
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -14,8 +19,7 @@ interface RawDriveFile {
   id: string;
   name: string;
   mimeType: string;
-  thumbnailLink?: string;
-  imageMediaMetadata?: { width?: number; height?: number };
+  imageMediaMetadata?: { width?: number; height?: number; rotation?: number };
   videoMediaMetadata?: {
     width?: number;
     height?: number;
@@ -42,25 +46,9 @@ export function extractDriveFolderId(input: string): string | null {
 
 export function buildOptimizedThumbnailUrls(
   fileId: string,
-  thumbnailLink?: string
+  _thumbnailLink?: string
 ): { gridThumbUrl: string; previewUrl: string } {
-  if (thumbnailLink) {
-    if (/=s\d+/.test(thumbnailLink)) {
-      return {
-        gridThumbUrl: thumbnailLink.replace(/=s\d+.*$/, '=s480'),
-        previewUrl: thumbnailLink.replace(/=s\d+.*$/, '=s2400'),
-      };
-    }
-    return {
-      gridThumbUrl: `${thumbnailLink}=s480`,
-      previewUrl: `${thumbnailLink}=s2400`,
-    };
-  }
-
-  return {
-    gridThumbUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w480`,
-    previewUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w2400`,
-  };
+  return buildStableDriveThumbnailUrls(fileId);
 }
 
 function getFallbackClientDriveApiKey(): string {
@@ -89,7 +77,7 @@ async function fetchAllFolderChildrenDirect(
       pageSize: '1000',
       orderBy: 'name',
       fields:
-        'nextPageToken,files(id,name,mimeType,thumbnailLink,imageMediaMetadata(width,height),videoMediaMetadata(width,height,durationMillis))',
+        'nextPageToken,files(id,name,mimeType,imageMediaMetadata(width,height,rotation),videoMediaMetadata(width,height,durationMillis))',
       includeItemsFromAllDrives: 'true',
       supportsAllDrives: 'true',
       key: apiKey,
@@ -152,16 +140,21 @@ export async function crawlGoogleDriveFolder(
     if (contentType.includes('application/json')) {
       const payload = await res.json();
       if (res.ok && payload?.items) {
-        const items: DriveMediaItem[] = payload.items.map((dto: any) => ({
-          ...dto,
-          status: 'kept',
-          rating: 0,
-          edit: {
-            ...DEFAULT_EDIT_CONFIG,
-            logos:
-              dto.mediaType === 'image' ? cloneLogoLayers(initialLogos) : [],
-          },
-        }));
+        const items: DriveMediaItem[] = payload.items.map((dto: any) => {
+          const normalized = normalizeDriveMediaUrls(dto);
+          return {
+            ...normalized,
+            status: 'kept',
+            rating: 0,
+            edit: {
+              ...DEFAULT_EDIT_CONFIG,
+              logos:
+                normalized.mediaType === 'image'
+                  ? cloneLogoLayers(initialLogos)
+                  : [],
+            },
+          };
+        });
         return {
           rootFolderId: payload.rootFolderId,
           folders: payload.folders,
@@ -224,9 +217,13 @@ export async function crawlGoogleDriveFolder(
         });
         for (const raw of mediaRaw) {
           const isVideo = raw.mimeType.startsWith('video/');
-          const { gridThumbUrl, previewUrl } = buildOptimizedThumbnailUrls(
-            raw.id,
-            raw.thumbnailLink
+          const { gridThumbUrl, previewUrl } = buildStableDriveThumbnailUrls(
+            raw.id
+          );
+          const { width, height } = resolveOrientedMediaDimensions(
+            raw.imageMediaMetadata?.width || raw.videoMediaMetadata?.width,
+            raw.imageMediaMetadata?.height || raw.videoMediaMetadata?.height,
+            raw.imageMediaMetadata?.rotation
           );
           items.push({
             id: raw.id,
@@ -240,14 +237,8 @@ export async function crawlGoogleDriveFolder(
             downloadUrl: `${DRIVE_API_BASE}/${raw.id}?alt=media&acknowledgeAbuse=true&key=${encodeURIComponent(
               fallbackKey
             )}`,
-            width:
-              raw.imageMediaMetadata?.width ||
-              raw.videoMediaMetadata?.width ||
-              1600,
-            height:
-              raw.imageMediaMetadata?.height ||
-              raw.videoMediaMetadata?.height ||
-              1067,
+            width,
+            height,
             durationMillis:
               raw.videoMediaMetadata?.durationMillis !== undefined
                 ? Number(raw.videoMediaMetadata.durationMillis)
