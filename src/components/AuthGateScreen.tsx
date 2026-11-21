@@ -263,12 +263,12 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
   };
 
   return (
-    <div className="min-h-screen w-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4 sm:p-8 select-none">
-      <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
-        {/* Left Feature Showcase Column */}
-        <div className="lg:col-span-6 p-7 sm:p-9 bg-zinc-950/75 border-b lg:border-b-0 lg:border-r border-zinc-800 flex flex-col justify-between space-y-6">
+    <div className="min-h-dvh w-full bg-[#08080A] text-zinc-100 flex items-start sm:items-center justify-center px-3.5 py-5 sm:p-8 pb-safe overflow-y-auto select-none">
+      <div className="max-w-lg lg:max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl my-auto">
+        {/* Left Feature Showcase Column (placed below form on phones & portrait tablets) */}
+        <div className="order-2 lg:order-1 lg:col-span-6 p-5 sm:p-8 lg:p-9 bg-zinc-950/75 border-t lg:border-t-0 lg:border-r border-zinc-800 flex flex-col justify-between space-y-5 sm:space-y-6">
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
+            <div className="hidden lg:flex items-center gap-3">
               <img
                 src="/logo-cgm.png"
                 alt="CGM Studio Logo"
@@ -284,7 +284,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
               </div>
             </div>
 
-            <div className="space-y-3 pt-2 text-xs text-zinc-300">
+            <div className="space-y-3 pt-1 lg:pt-2 text-xs text-zinc-300">
               <div className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-900/90 border border-zinc-800/80">
                 <Stamp className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
@@ -321,8 +321,25 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
           </div>
         </div>
 
-        {/* Right Login / Sign-up Form Column */}
-        <div className="lg:col-span-6 p-7 sm:p-9 flex flex-col justify-center space-y-5">
+        {/* Right Login / Sign-up Form Column (shown first on phones & portrait tablets) */}
+        <div className="order-1 lg:order-2 lg:col-span-6 p-5 sm:p-8 lg:p-9 flex flex-col justify-center space-y-4 sm:space-y-5">
+          {/* Compact Mobile/Tablet Brand Header */}
+          <div className="flex lg:hidden items-center gap-3 pb-1">
+            <img
+              src="/logo-cgm.png"
+              alt="CGM Studio Logo"
+              className="w-10 h-10 rounded-xl border border-amber-400/35 object-cover shadow-md shrink-0"
+            />
+            <div className="min-w-0">
+              <span className="text-base font-bold tracking-tight text-white block">
+                CGM Studio
+              </span>
+              <span className="text-[11px] text-zinc-400 block truncate">
+                Lọc ảnh, Chỉnh màu &amp; Ghép Đa Logo tốc độ cao
+              </span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-950 rounded-xl border border-zinc-800">
             <button
               type="button"
@@ -331,7 +348,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
                 setErrorMsg(null);
                 setInfoMsg(null);
               }}
-              className={`py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              className={`py-2.5 sm:py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                 tab === 'login'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -346,13 +363,13 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
                 setErrorMsg(null);
                 setInfoMsg(null);
               }}
-              className={`py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              className={`py-2.5 sm:py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                 tab === 'register'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              Đăng ký tài khoản mới
+              Đăng ký mới
             </button>
           </div>
 
@@ -429,7 +446,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="VD: Minh Vũ Studio"
-                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3.5 py-2.5 sm:py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-base sm:text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
             )}
@@ -446,7 +463,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="studio@domain.com"
-                  className="w-full py-2 bg-transparent text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none"
+                  className="w-full py-2.5 sm:py-2 bg-transparent text-base sm:text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -479,7 +496,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Tối thiểu 6 ký tự"
-                    className="w-full py-2 bg-transparent text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none"
+                    className="w-full py-2.5 sm:py-2 bg-transparent text-base sm:text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -488,7 +505,7 @@ export const AuthGateScreen: React.FC<{ isSupabaseConfigured: boolean }> = ({
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+              className="w-full py-3 sm:py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
             >
               {submitting ? (
                 <>

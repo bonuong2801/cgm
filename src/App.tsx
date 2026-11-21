@@ -63,7 +63,7 @@ export default function App() {
 
   if (isLoadingAuth) {
     return (
-      <div className="h-screen w-screen bg-[#08080A] text-zinc-300 flex flex-col items-center justify-center gap-3 select-none">
+      <div className="h-dvh w-full bg-[#08080A] text-zinc-300 flex flex-col items-center justify-center gap-3 select-none">
         <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
         <span className="text-xs text-zinc-400">
           Đang xác thực phiên đăng nhập CGM Studio...
@@ -98,13 +98,59 @@ function StudioWorkspace() {
   const [items, setItems] = useState<DriveMediaItem[]>([]);
   itemsRef.current = items;
 
-  // Responsive Collapsible Panes
+  // Responsive Collapsible Panes:
+  // Phone (<768px): both closed (Bottom Sheet & Left Drawer on demand)
+  // Portrait Tablet (768-1023px): both closed (Right Dock & Left Drawer on demand)
+  // Landscape Tablet (1024-1279px): Right Dock open, Left Drawer on demand
+  // Desktop (>=1280px): classic 3-pane workspace
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState<boolean>(
-    () => typeof window === 'undefined' || window.innerWidth >= 1024
+    () => typeof window === 'undefined' || window.innerWidth >= 1280
   );
   const [isRightInspectorOpen, setIsRightInspectorOpen] = useState<boolean>(
-    () => typeof window === 'undefined' || window.innerWidth >= 1200
+    () => typeof window === 'undefined' || window.innerWidth >= 1024
   );
+  const [inspectorTab, setInspectorTab] = useState<'color' | 'logo'>('color');
+  const [isMobileDriveOpen, setIsMobileDriveOpen] = useState<boolean>(false);
+
+  const handleToggleLeftSidebar = useCallback(() => {
+    setIsLeftSidebarOpen((prev) => {
+      const next = !prev;
+      if (next && typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setIsRightInspectorOpen(false);
+        setIsMobileDriveOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleRightInspector = useCallback(() => {
+    setIsRightInspectorOpen((prev) => {
+      const next = !prev;
+      if (next && typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setIsLeftSidebarOpen(false);
+        setIsMobileDriveOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleOpenInspectorTab = useCallback((tab: 'color' | 'logo') => {
+    setInspectorTab(tab);
+    setIsRightInspectorOpen(true);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsLeftSidebarOpen(false);
+      setIsMobileDriveOpen(false);
+    }
+  }, []);
+
+  const handleFocusDriveInput = useCallback(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMobileDriveOpen(true);
+      setIsLeftSidebarOpen(false);
+    } else {
+      driveInputRef.current?.focus();
+    }
+  }, []);
 
   // Filtering, Search, Quick Filter & Sort
   const [selectedFolderId, setSelectedFolderId] = useState<string>('ALL');
@@ -922,6 +968,14 @@ function StudioWorkspace() {
         setLightboxItemId(null);
       } else if (isExportModalOpen) {
         setIsExportModalOpen(false);
+      } else if (isMobileDriveOpen) {
+        setIsMobileDriveOpen(false);
+      } else if (
+        isLeftSidebarOpen &&
+        typeof window !== 'undefined' &&
+        window.innerWidth < 1280
+      ) {
+        setIsLeftSidebarOpen(false);
       }
     },
     onCompareOriginalChange: setCompareOriginal,
@@ -978,7 +1032,7 @@ function StudioWorkspace() {
   );
 
   return (
-    <div className="h-screen w-screen bg-[#08080A] text-zinc-100 flex flex-col overflow-hidden">
+    <div className="h-dvh w-full bg-[#08080A] text-zinc-100 flex flex-col overflow-hidden">
       {/* Top Studio Bar */}
       <TopBar
         profile={profile}
@@ -999,23 +1053,26 @@ function StudioWorkspace() {
         canUndoReject={rejectedHistoryIds.length > 0}
         onUndoReject={handleUndoLastReject}
         isLeftSidebarOpen={isLeftSidebarOpen}
-        onToggleLeftSidebar={() => setIsLeftSidebarOpen((v) => !v)}
+        onToggleLeftSidebar={handleToggleLeftSidebar}
         isRightInspectorOpen={isRightInspectorOpen}
-        onToggleRightInspector={() => setIsRightInspectorOpen((v) => !v)}
+        onToggleRightInspector={handleToggleRightInspector}
+        isMobileDriveOpen={isMobileDriveOpen}
+        onToggleMobileDrive={() => setIsMobileDriveOpen((v) => !v)}
+        onCloseMobileDrive={() => setIsMobileDriveOpen(false)}
       />
 
       {/* Actionable Vietnamese Error Banner */}
       {errorMessage && (
-        <div className="bg-rose-500/15 border-b border-rose-500/30 px-5 py-2 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-rose-200">
+        <div className="bg-rose-500/15 border-b border-rose-500/30 px-3 md:px-5 py-2 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-xs text-rose-200 min-w-0">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{errorMessage}</span>
+            <span className="break-words">{errorMessage}</span>
           </div>
           <button
             type="button"
             onClick={() => setErrorMessage(null)}
             aria-label="Đóng thông báo lỗi"
-            className="text-rose-300 hover:text-white p-1 cursor-pointer"
+            className="text-rose-300 hover:text-white p-1 shrink-0 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -1024,16 +1081,16 @@ function StudioWorkspace() {
 
       {/* Toast Info Banner */}
       {toastMessage && (
-        <div className="bg-emerald-500/15 border-b border-emerald-500/30 px-5 py-2 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-emerald-200">
+        <div className="bg-emerald-500/15 border-b border-emerald-500/30 px-3 md:px-5 py-2 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-xs text-emerald-200 min-w-0">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{toastMessage}</span>
+            <span className="break-words">{toastMessage}</span>
           </div>
           <button
             type="button"
             onClick={() => setToastMessage(null)}
             aria-label="Đóng thông báo"
-            className="text-emerald-300 hover:text-white p-1 cursor-pointer"
+            className="text-emerald-300 hover:text-white p-1 shrink-0 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -1041,24 +1098,37 @@ function StudioWorkspace() {
       )}
 
       {isLoading && loadingStatusText && (
-        <div className="bg-amber-500/15 border-b border-amber-500/30 px-5 py-2 text-xs text-amber-200 flex items-center justify-center shrink-0">
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-3 md:px-5 py-2 text-xs text-amber-200 flex items-center justify-center text-center shrink-0">
           {loadingStatusText}
         </div>
       )}
 
-      {/* 3-Pane Studio Workspace */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
+      {/* Responsive Studio Workspace: Phone (Bottom Sheet), iPad (Left Drawer + Right Dock), Desktop (3-Pane) */}
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden relative">
         {isLeftSidebarOpen && (
-          <FolderSidebar
-            folders={folders}
-            items={items}
-            selectedFolderId={selectedFolderId}
-            onSelectFolder={setSelectedFolderId}
-            mediaTypeFilter={mediaTypeFilter}
-            onSelectMediaType={setMediaTypeFilter}
-            statusFilter={statusFilter}
-            onSelectStatusFilter={setStatusFilter}
-          />
+          <>
+            <div
+              className="fixed inset-0 z-30 bg-black/65 xl:hidden"
+              onClick={() => setIsLeftSidebarOpen(false)}
+              aria-hidden="true"
+            />
+            <div className="fixed inset-y-0 left-0 z-40 w-[min(84vw,300px)] xl:static xl:z-auto xl:w-auto h-full shrink-0 shadow-2xl xl:shadow-none">
+              <FolderSidebar
+                folders={folders}
+                items={items}
+                selectedFolderId={selectedFolderId}
+                onSelectFolder={setSelectedFolderId}
+                mediaTypeFilter={mediaTypeFilter}
+                onSelectMediaType={setMediaTypeFilter}
+                statusFilter={statusFilter}
+                onSelectStatusFilter={setStatusFilter}
+                onCloseMobileDrawer={() => setIsLeftSidebarOpen(false)}
+                profileEmail={profile?.email}
+                onClearAllWorkspace={handleClearAllWorkspace}
+                onSignOut={signOut}
+              />
+            </div>
+          </>
         )}
 
         <VirtualMediaGrid
@@ -1090,35 +1160,44 @@ function StudioWorkspace() {
           onRequestUpgrade={handleOpenUpgradeModal}
           onMoveLogoLayer={handleMoveLightboxLogoLayer}
           gridColumns={4}
-          onFocusDriveInput={() => driveInputRef.current?.focus()}
+          onFocusDriveInput={handleFocusDriveInput}
           onImportLocalFiles={handleImportLocalFiles}
           hasAnyLoadedItems={items.length > 0}
+          isInspectorOpen={isRightInspectorOpen}
+          onOpenInspectorTab={handleOpenInspectorTab}
+          canUndoReject={rejectedHistoryIds.length > 0}
+          onUndoReject={handleUndoLastReject}
         />
 
         {isRightInspectorOpen && (
-          <EditorInspector
-            entitlements={entitlements}
-            onRequestUpgrade={handleOpenUpgradeModal}
-            selectedItem={selectedItem}
-            checkedCount={checkedItemIds.size}
-            keptPhotoCount={keptPhotoCount}
-            currentFolderPhotoCount={currentFolderPhotoCount}
-            globalLogos={globalLogos}
-            logoPresets={logoPresets}
-            onSaveLogoPreset={handleSaveLogoPreset}
-            onDeleteLogoPreset={handleDeleteLogoPreset}
-            logoScope={logoScope}
-            onChangeLogoScope={setLogoScope}
-            onBatchUpdateLogos={handleBatchUpdateLogos}
-            onUpdateEdit={handleUpdateEdit}
-            compareOriginal={compareOriginal}
-            onCompareOriginalChange={setCompareOriginal}
-            onOpenCropModal={(item) => setCropModalItemId(item.id)}
-            onOpenLightbox={(item) => setLightboxItemId(item.id)}
-            onSyncCheckedPhotos={handleSyncCheckedPhotos}
-            onSyncCurrentFolder={handleSyncCurrentFolder}
-            onSyncAllFolders={handleSyncAllFolders}
-          />
+          <div className="h-[56dvh] w-full md:h-full md:w-auto shrink-0 z-20 md:z-auto">
+            <EditorInspector
+              entitlements={entitlements}
+              onRequestUpgrade={handleOpenUpgradeModal}
+              selectedItem={selectedItem}
+              checkedCount={checkedItemIds.size}
+              keptPhotoCount={keptPhotoCount}
+              currentFolderPhotoCount={currentFolderPhotoCount}
+              globalLogos={globalLogos}
+              logoPresets={logoPresets}
+              onSaveLogoPreset={handleSaveLogoPreset}
+              onDeleteLogoPreset={handleDeleteLogoPreset}
+              logoScope={logoScope}
+              onChangeLogoScope={setLogoScope}
+              onBatchUpdateLogos={handleBatchUpdateLogos}
+              onUpdateEdit={handleUpdateEdit}
+              compareOriginal={compareOriginal}
+              onCompareOriginalChange={setCompareOriginal}
+              onOpenCropModal={(item) => setCropModalItemId(item.id)}
+              onOpenLightbox={(item) => setLightboxItemId(item.id)}
+              onSyncCheckedPhotos={handleSyncCheckedPhotos}
+              onSyncCurrentFolder={handleSyncCurrentFolder}
+              onSyncAllFolders={handleSyncAllFolders}
+              activeTab={inspectorTab}
+              onChangeActiveTab={setInspectorTab}
+              onClosePanel={() => setIsRightInspectorOpen(false)}
+            />
+          </div>
         )}
       </div>
 

@@ -6,7 +6,9 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Layers,
+  LogOut,
   Trash2,
+  X,
 } from 'lucide-react';
 import type {
   CullingStatus,
@@ -24,6 +26,10 @@ interface FolderSidebarProps {
   onSelectMediaType: (filter: MediaTypeFilter) => void;
   statusFilter: CullingStatus;
   onSelectStatusFilter: (status: CullingStatus) => void;
+  onCloseMobileDrawer?: () => void;
+  profileEmail?: string;
+  onClearAllWorkspace?: () => void;
+  onSignOut?: () => void;
 }
 
 export const FolderSidebar: React.FC<FolderSidebarProps> = ({
@@ -35,6 +41,10 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
   onSelectMediaType,
   statusFilter,
   onSelectStatusFilter,
+  onCloseMobileDrawer,
+  profileEmail,
+  onClearAllWorkspace,
+  onSignOut,
 }) => {
   // Single O(N) pass for all folder & global counts instead of repeated O(F * N) scans
   const statsSummary = useMemo(() => {
@@ -85,7 +95,24 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
   }, [items, selectedFolderId, mediaTypeFilter]);
 
   return (
-    <aside className="w-66 bg-[#101013] border-r border-white/10 flex flex-col h-full shrink-0 select-none">
+    <aside className="w-full xl:w-66 bg-[#101013] border-r border-white/10 flex flex-col h-full shrink-0 select-none">
+      {/* Mobile / Tablet Drawer Header (<xl) */}
+      {onCloseMobileDrawer && (
+        <div className="xl:hidden px-3.5 py-2.5 border-b border-white/10 flex items-center justify-between gap-2 pt-safe">
+          <span className="text-xs font-bold text-zinc-100 tracking-wide">
+            Thư mục &amp; Bộ lọc
+          </span>
+          <button
+            type="button"
+            onClick={onCloseMobileDrawer}
+            aria-label="Đóng ngăn kéo thư mục"
+            className="w-8 h-8 rounded-lg bg-[#09090B] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Section 1: Culling Status Filter */}
       <div className="p-3.5 border-b border-white/10 space-y-3">
         <div className="flex items-center justify-between">
@@ -199,8 +226,11 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
 
         <button
           type="button"
-          onClick={() => onSelectFolder('ALL')}
-          className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
+          onClick={() => {
+            onSelectFolder('ALL');
+            onCloseMobileDrawer?.();
+          }}
+          className={`w-full px-3 py-2.5 xl:py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
             selectedFolderId === 'ALL'
               ? 'bg-amber-500/15 text-amber-200 border border-amber-500/35'
               : 'text-zinc-300 hover:bg-white/5 border border-transparent'
@@ -245,8 +275,11 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
             <button
               key={folder.id}
               type="button"
-              onClick={() => onSelectFolder(folder.id)}
-              className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
+              onClick={() => {
+                onSelectFolder(folder.id);
+                onCloseMobileDrawer?.();
+              }}
+              className={`w-full px-3 py-2.5 xl:py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
                 isSelected
                   ? 'bg-amber-500/15 text-amber-200 border border-amber-500/35'
                   : 'text-zinc-300 hover:bg-white/5 border border-transparent'
@@ -287,6 +320,45 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
           );
         })}
       </div>
+
+      {/* Mobile-only Workspace & Account Actions (<md) */}
+      {(onSignOut || onClearAllWorkspace) && (
+        <div className="md:hidden border-t border-white/10 p-3 pb-safe space-y-2 bg-[#0B0B0D] shrink-0">
+          {profileEmail && (
+            <div className="text-[11px] text-zinc-400 truncate px-1">
+              {profileEmail}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            {items.length > 0 && onClearAllWorkspace && (
+              <button
+                type="button"
+                onClick={() => {
+                  onCloseMobileDrawer?.();
+                  onClearAllWorkspace();
+                }}
+                className="flex-1 h-9 px-2.5 rounded-lg bg-[#121215] hover:bg-zinc-800 border border-white/10 text-xs font-medium text-zinc-300 hover:text-rose-300 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Làm mới</span>
+              </button>
+            )}
+            {onSignOut && (
+              <button
+                type="button"
+                onClick={() => {
+                  onCloseMobileDrawer?.();
+                  onSignOut();
+                }}
+                className="flex-1 h-9 px-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-medium text-rose-300 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Đăng xuất</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

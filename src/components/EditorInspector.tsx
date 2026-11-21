@@ -23,6 +23,7 @@ import {
   SplitSquareHorizontal,
   Stamp,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { PlanEntitlements } from '../types/auth.ts';
 import {
@@ -72,6 +73,9 @@ interface EditorInspectorProps {
   onSyncCheckedPhotos: (sourceEdit: EditConfig) => number;
   onSyncCurrentFolder: (sourceEdit: EditConfig) => number;
   onSyncAllFolders: (sourceEdit: EditConfig) => number;
+  activeTab?: 'color' | 'logo';
+  onChangeActiveTab?: (tab: 'color' | 'logo') => void;
+  onClosePanel?: () => void;
 }
 
 const ANCHOR_GRID_3X3: { value: LogoAnchorPosition; short: string; label: string }[] = [
@@ -115,11 +119,19 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
   onSyncCheckedPhotos,
   onSyncCurrentFolder,
   onSyncAllFolders,
+  activeTab: controlledTab,
+  onChangeActiveTab,
+  onClosePanel,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceLayerInputRef = useRef<HTMLInputElement | null>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'color' | 'logo'>('color');
+  const [internalTab, setInternalTab] = useState<'color' | 'logo'>('color');
+  const activeTab = controlledTab ?? internalTab;
+  const setActiveTab = (next: 'color' | 'logo') => {
+    setInternalTab(next);
+    onChangeActiveTab?.(next);
+  };
   const [presetNameInput, setPresetNameInput] = useState<string>('');
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
@@ -819,7 +831,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
                 onChange={(e) => setPresetNameInput(e.target.value)}
                 placeholder="Tên mẫu (VD: Hội nghị 3 tài trợ)..."
                 aria-label="Tên bộ Logo mẫu"
-                className="flex-1 min-w-0 px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                className="flex-1 min-w-0 px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-base md:text-[11px] text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
               />
               <button
                 type="button"
@@ -868,9 +880,37 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
     </section>
   );
 
+  const asideShellClass =
+    'w-full md:w-72 lg:w-80 bg-[#121215] border-t md:border-t-0 md:border-l border-white/15 md:border-white/10 rounded-t-2xl md:rounded-none flex flex-col h-full shrink-0 select-none overflow-hidden shadow-2xl md:shadow-none';
+
+  const mobileSheetGrabHandle = (
+    <div className="md:hidden pt-2 pb-1 flex justify-center shrink-0">
+      <span
+        className="w-10 h-1 rounded-full bg-white/20"
+        aria-hidden="true"
+      />
+    </div>
+  );
+
   if (!selectedItem) {
     return (
-      <aside className="w-80 bg-[#121215] border-l border-white/10 p-4 flex flex-col justify-between select-none shrink-0 overflow-y-auto">
+      <aside className={`${asideShellClass} p-4 pb-safe justify-between overflow-y-auto`}>
+        {onClosePanel && (
+          <div className="lg:hidden flex items-center justify-between pb-2.5 mb-2 border-b border-white/10 shrink-0">
+            <span className="text-xs font-bold text-zinc-200">
+              Chỉnh sửa &amp; Multi-Logo
+            </span>
+            <button
+              type="button"
+              onClick={onClosePanel}
+              aria-label="Đóng bảng chỉnh sửa"
+              className="px-2.5 py-1 rounded-lg bg-[#09090B] border border-white/10 text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Xong</span>
+            </button>
+          </div>
+        )}
         {keptPhotoCount > 0 || logoPresets.length > 0 ? (
           <div className="space-y-4">
             {renderMultiLogoComposer()}
@@ -889,7 +929,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
               Chưa chọn file phương tiện
             </p>
             <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-              Tải ảnh từ máy tính hoặc Google Drive để cắt khung, chỉnh màu và ghép nhiều Logo lên cùng 1 bức ảnh.
+              Tải ảnh từ máy hoặc Google Drive để cắt khung, chỉnh màu và ghép nhiều Logo lên cùng 1 bức ảnh.
             </p>
           </div>
         )}
@@ -899,22 +939,35 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
 
   if (selectedItem.mediaType === 'video') {
     return (
-      <aside className="w-80 bg-[#121215] border-l border-white/10 p-5 flex flex-col justify-between select-none shrink-0 overflow-y-auto">
+      <aside className={`${asideShellClass} p-4 md:p-5 pb-safe justify-between overflow-y-auto`}>
         <div className="space-y-4">
-          <div className="pb-3 border-b border-white/10">
-            <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
-              <Film className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Thông tin tệp Video</span>
-            </span>
-            <h2
-              className="text-sm font-bold text-zinc-100 truncate mt-1"
-              title={selectedItem.name}
-            >
-              {selectedItem.name}
-            </h2>
-            <p className="text-xs text-zinc-400 mt-0.5 truncate">
-              Thư mục: {selectedItem.folderName}
-            </p>
+          <div className="pb-3 border-b border-white/10 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                <Film className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Thông tin tệp Video</span>
+              </span>
+              <h2
+                className="text-sm font-bold text-zinc-100 truncate mt-1"
+                title={selectedItem.name}
+              >
+                {selectedItem.name}
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5 truncate">
+                Thư mục: {selectedItem.folderName}
+              </p>
+            </div>
+            {onClosePanel && (
+              <button
+                type="button"
+                onClick={onClosePanel}
+                aria-label="Đóng bảng thông tin video"
+                className="lg:hidden px-2.5 py-1 rounded-lg bg-[#09090B] border border-white/10 text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Xong</span>
+              </button>
+            )}
           </div>
 
           <div className="bg-[#09090B] border border-white/10 rounded-lg p-3.5 space-y-2 text-xs">
@@ -972,9 +1025,11 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
   };
 
   return (
-    <aside className="w-80 bg-[#121215] border-l border-white/10 flex flex-col h-full shrink-0 select-none overflow-hidden">
-      {/* Inspector Header + Star Rating */}
-      <div className="p-3.5 border-b border-white/10 space-y-2">
+    <aside className={asideShellClass}>
+      {mobileSheetGrabHandle}
+
+      {/* Inspector Header */}
+      <div className="px-3.5 py-2.5 md:p-3.5 border-b border-white/10 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div
@@ -988,15 +1043,27 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
               {selectedItem.height}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleResetAllPhotoEdits}
-            className="px-2 py-1 rounded-md bg-[#09090B] hover:bg-zinc-800 text-[11px] font-medium text-zinc-300 border border-white/10 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
-            title="Đặt lại toàn bộ chỉnh sửa của ảnh này"
-          >
-            <RotateCcw className="w-3 h-3 text-amber-400" />
-            <span>Reset</span>
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleResetAllPhotoEdits}
+              className="px-2 py-1 rounded-md bg-[#09090B] hover:bg-zinc-800 text-[11px] font-medium text-zinc-300 border border-white/10 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              title="Đặt lại toàn bộ chỉnh sửa của ảnh này"
+            >
+              <RotateCcw className="w-3 h-3 text-amber-400" />
+              <span>Reset</span>
+            </button>
+            {onClosePanel && (
+              <button
+                type="button"
+                onClick={onClosePanel}
+                aria-label="Đóng bảng chỉnh sửa"
+                className="lg:hidden px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-400 text-[11px] font-bold text-zinc-950 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              >
+                <span>Xong</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Before/After Hold Button */}
@@ -1006,15 +1073,17 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
             onPointerDown={() => onCompareOriginalChange(true)}
             onPointerUp={() => onCompareOriginalChange(false)}
             onPointerLeave={() => onCompareOriginalChange(false)}
-            className={`px-2 py-1 rounded text-[11px] font-medium border flex items-center gap-1 cursor-pointer transition-colors ${
+            onPointerCancel={() => onCompareOriginalChange(false)}
+            className={`px-2.5 py-1 rounded text-[11px] font-medium border flex items-center gap-1 cursor-pointer transition-colors touch-none ${
               compareOriginal
                 ? 'bg-sky-500/20 border-sky-400 text-sky-200'
                 : 'bg-[#09090B] border-white/10 text-zinc-300 hover:text-white'
             }`}
-            title="Nhấn giữ chuột (hoặc giữ phím \) để so sánh với ảnh gốc chưa sửa"
+            title="Nhấn giữ (hoặc giữ phím \) để so sánh với ảnh gốc chưa sửa"
           >
             <SplitSquareHorizontal className="w-3 h-3 text-sky-400" />
-            <span>Giữ xem gốc (\)</span>
+            <span>Giữ xem gốc</span>
+            <span className="hidden lg:inline">(\)</span>
           </button>
         </div>
       </div>
@@ -1025,7 +1094,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('color')}
-            className={`py-1.5 px-2 rounded-md font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+            className={`py-2 md:py-1.5 px-2 rounded-md font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'color'
                 ? 'bg-amber-500 text-zinc-950 font-bold shadow-xs'
                 : 'text-zinc-400 hover:text-zinc-200'
@@ -1038,7 +1107,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('logo')}
-            className={`py-1.5 px-2 rounded-md font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+            className={`py-2 md:py-1.5 px-2 rounded-md font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
               activeTab === 'logo'
                 ? 'bg-amber-500 text-zinc-950 font-bold shadow-xs'
                 : 'text-zinc-400 hover:text-zinc-200'
@@ -1062,7 +1131,7 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
       </div>
 
       {/* Scrollable Inspector Controls */}
-      <div className="flex-1 overflow-y-auto p-3.5 space-y-5">
+      <div className="flex-1 overflow-y-auto p-3.5 pb-safe space-y-5">
         {syncFeedback && (
           <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] text-emerald-300 leading-relaxed">
             {syncFeedback}

@@ -294,20 +294,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Xuất hàng loạt ảnh và video"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 select-none"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 select-none"
       onClick={() => {
         if (!progress.isRunning) onClose();
       }}
     >
       <div
-        className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <FolderTree className="w-4 h-4 text-indigo-400" aria-hidden="true" />
-            <h2 className="text-sm font-bold text-zinc-100">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-zinc-800 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <FolderTree className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
+            <h2 className="text-xs sm:text-sm font-bold text-zinc-100 truncate">
               Xuất hàng loạt Ảnh (Ghép đa Logo) &amp; Video gốc
             </h2>
           </div>
@@ -316,7 +316,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Đóng bảng xuất file"
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 shrink-0 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -324,7 +324,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* Free Tier Export Cap Banner */}
           {isCappedByFreeTier && (
             <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-between gap-3 text-xs">
@@ -859,12 +859,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 pb-safe bg-zinc-900 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
           <div className="text-xs text-zinc-400 font-mono tabular-nums">
             Sẽ xuất: {keptPhotosCount} ảnh · {keptVideosCount} video
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 ml-auto">
             {progress.isRunning ? (
               <button
                 type="button"

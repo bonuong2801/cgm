@@ -22,13 +22,16 @@ import {
   collectAdjacentPreloadUrls,
   computeCursorZoomState,
   computeFrameGeometry,
+  computePinchZoomState,
   computeSmartLogoPlacement,
   computeWarmthTint,
   fitAspectRatioInBox,
   getInstantPaintState,
+  getResponsiveGridColumns,
   normalizeDriveMediaUrls,
   resolveDetectedDimensions,
   resolveOrientedMediaDimensions,
+  resolveSwipeDirection,
   sanitizeFileToken,
   sanitizeFolderNameForDisk,
 } from '../src/utils/mediaMath.ts';
@@ -673,6 +676,53 @@ async function runCoreChecks() {
     if (savedYearly !== undefined) process.env.PLAN_YEARLY_VND = savedYearly;
     if (savedLifetime !== undefined) process.env.PLAN_LIFETIME_VND = savedLifetime;
   }
+
+  // 14. Responsive Grid Columns (Phone, Portrait Tablet, Landscape Tablet, Desktop)
+  assert.equal(getResponsiveGridColumns(360, 4), 2);
+  assert.equal(getResponsiveGridColumns(430, 4), 2);
+  assert.equal(getResponsiveGridColumns(520, 4), 2);
+  assert.equal(getResponsiveGridColumns(768, 4), 3);
+  assert.equal(getResponsiveGridColumns(834, 4), 3);
+  assert.equal(getResponsiveGridColumns(1024, 4), 4);
+  assert.equal(getResponsiveGridColumns(1440, 4), 4);
+  assert.equal(getResponsiveGridColumns(0, 4), 4);
+
+  // 15. Touch Pinch Zoom + Simultaneous Pan & Swipe Direction Classifier
+  assert.deepEqual(
+    computePinchZoomState(
+      1,
+      { x: 0, y: 0 },
+      2,
+      { x: 50, y: -25 },
+      { x: 10, y: -5 },
+      1,
+      5
+    ),
+    { zoom: 2, pan: { x: -40, y: 20 } }
+  );
+  assert.deepEqual(
+    computePinchZoomState(
+      1.1,
+      { x: 30, y: -20 },
+      0.7,
+      { x: 0, y: 0 },
+      { x: 5, y: 5 },
+      1,
+      5
+    ),
+    { zoom: 1, pan: { x: 0, y: 0 } }
+  );
+  assert.equal(
+    computePinchZoomState(4, { x: 0, y: 0 }, 3, { x: 0, y: 0 }, { x: 0, y: 0 }, 1, 5)
+      .zoom,
+    5
+  );
+
+  assert.equal(resolveSwipeDirection(-80, 10, 220), 1);
+  assert.equal(resolveSwipeDirection(90, -15, 250), -1);
+  assert.equal(resolveSwipeDirection(-30, 0, 150), 0);
+  assert.equal(resolveSwipeDirection(-70, 90, 200), 0);
+  assert.equal(resolveSwipeDirection(-90, 0, 950), 0);
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }

@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Search,
   Sliders,
+  SlidersHorizontal,
   SplitSquareHorizontal,
   Square,
   Stamp,
@@ -37,11 +38,14 @@ import {
   buildImageFallbackSources,
   computeCursorZoomState,
   computeFrameGeometry,
+  computePinchZoomState,
   computeSmartLogoPlacement,
   computeWarmthTint,
   fitAspectRatioInBox,
   getInstantPaintState,
+  getResponsiveGridColumns,
   resolveDetectedDimensions,
+  resolveSwipeDirection,
 } from '../utils/mediaMath.ts';
 import { extractFilesFromDataTransfer } from '../services/localFileLoader.ts';
 
@@ -86,6 +90,10 @@ interface VirtualMediaGridProps {
   onFocusDriveInput: () => void;
   onImportLocalFiles: (files: FileList | File[]) => void;
   hasAnyLoadedItems: boolean;
+  isInspectorOpen?: boolean;
+  onOpenInspectorTab?: (tab: 'color' | 'logo') => void;
+  canUndoReject?: boolean;
+  onUndoReject?: () => void;
 }
 
 export function formatVideoDuration(durationMillis?: number): string {
@@ -575,6 +583,7 @@ export const LiveEditedPhotoPreview: React.FC<{
             key={layer.id}
             src={layer.dataUrl}
             alt={layer.fileName || `Logo ${index + 1}`}
+            data-logo-layer={isInteractive ? 'true' : undefined}
             onPointerDown={
               isInteractive
                 ? (e) => handleLogoPointerDown(layer.id, e)
@@ -586,6 +595,11 @@ export const LiveEditedPhotoPreview: React.FC<{
                 : undefined
             }
             onPointerUp={
+              isInteractive
+                ? (e) => handleLogoPointerUp(layer.id, e)
+                : undefined
+            }
+            onPointerCancel={
               isInteractive
                 ? (e) => handleLogoPointerUp(layer.id, e)
                 : undefined
@@ -693,6 +707,10 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   onFocusDriveInput,
   onImportLocalFiles,
   hasAnyLoadedItems,
+  isInspectorOpen = false,
+  onOpenInspectorTab,
+  canUndoReject = false,
+  onUndoReject,
 }) => {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const filmstripRef = useRef<HTMLDivElement | null>(null);
@@ -702,11 +720,15 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
 
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'loupe' | 'grid'>('loupe');
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState<boolean>(false);
   const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null);
   const [loupeBounds, setLoupeBounds] = useState<{
     width: number;
     height: number;
   }>({ width: 760, height: 480 });
+  const [gridContainerWidth, setGridContainerWidth] = useState<number>(() =>
+    typeof window === 'undefined' ? 1280 : window.innerWidth
+  );
 
   const selectedIndex = useMemo(() => {
     if (items.length === 0) return -1;
@@ -735,6 +757,30 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
     panX: number;
     panY: number;
   } | null>(null);
+  const loupeTouchRef = useRef<{
+    mode: 'none' | 'pan' | 'swipe' | 'pinch';
+    startX: number;
+    startY: number;
+    startTime: number;
+    panX: number;
+    panY: number;
+    pinchDist: number;
+    pinchMidX: number;
+    pinchMidY: number;
+  }>({
+    mode: 'none',
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+    panX: 0,
+    panY: 0,
+    pinchDist: 0,
+    pinchMidX: 0,
+    pinchMidY: 0,
+  });
+  const lastLoupeTapRef = useRef<{ time: number; x: number; y: number } | null>(
+    null
+  );
   const lastLoupeNavAtRef = useRef<number>(0);
   const loupeScrubTimerRef = useRef<number | null>(null);
 
@@ -931,20 +977,47 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
     [items]
   );
 
+  // Measure actual Grid viewport width so phone (2 cols), portrait tablet (3 cols),
+  // and landscape tablet / desktop (4 cols) adapt immediately on resize or rotation
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el || viewMode !== 'grid' || !hasAnyLoadedItems || items.length === 0) {
+      return;
+    }
+
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0) {
+        setGridContainerWidth(Math.round(rect.width));
+      }
+    };
+
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode, hasAnyLoadedItems, items.length > 0]);
+
+  const effectiveGridColumns = useMemo(
+    () => getResponsiveGridColumns(gridContainerWidth, gridColumns),
+    [gridContainerWidth, gridColumns]
+  );
+
   const rows = useMemo(() => {
     const result: DriveMediaItem[][] = [];
-    for (let i = 0; i < items.length; i += gridColumns) {
-      result.push(items.slice(i, i + gridColumns));
+    for (let i = 0; i < items.length; i += effectiveGridColumns) {
+      result.push(items.slice(i, i + effectiveGridColumns));
     }
     return result;
-  }, [items, gridColumns]);
+  }, [items, effectiveGridColumns]);
 
   const estimatedRowHeight = useMemo(() => {
-    switch (gridColumns) {
+    switch (effectiveGridColumns) {
       case 2:
-        return 420;
+        return gridContainerWidth < 500 ? 220 : 340;
       case 3:
-        return 300;
+        return 275;
       case 4:
         return 245;
       case 5:
@@ -954,7 +1027,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
       default:
         return 245;
     }
-  }, [gridColumns]);
+  }, [effectiveGridColumns, gridContainerWidth]);
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -971,10 +1044,10 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
     overscan: 8,
   });
 
-  // Re-measure virtual rows cleanly when column density changes
+  // Re-measure virtual rows cleanly when column density or orientation changes
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [gridColumns, rowVirtualizer]);
+  }, [effectiveGridColumns, gridContainerWidth, rowVirtualizer]);
 
   // Keep selected filmstrip card centered/visible in horizontal scrub rail
   useEffect(() => {
@@ -1036,23 +1109,23 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
         }}
         onDragLeave={() => setIsDraggingOver(false)}
         onDrop={handleDropFiles}
-        className="flex-1 bg-[#08080A] flex items-center justify-center p-8 select-none"
+        className="flex-1 bg-[#08080A] flex items-center justify-center p-4 sm:p-8 select-none overflow-y-auto"
       >
         {hiddenInputs}
 
         <div
-          className={`max-w-xl w-full bg-[#121215] border-2 border-dashed rounded-xl p-8 text-center space-y-5 transition-colors ${
+          className={`max-w-xl w-full bg-[#121215] border-2 border-dashed rounded-xl p-5 sm:p-8 text-center space-y-4 sm:space-y-5 transition-colors ${
             isDraggingOver
               ? 'border-amber-400 bg-amber-500/10'
               : 'border-white/15 hover:border-white/25'
           }`}
         >
-          <div className="w-14 h-14 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center mx-auto text-amber-400">
-            <UploadCloud className="w-7 h-7" aria-hidden="true" />
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center mx-auto text-amber-400">
+            <UploadCloud className="w-6 h-6 sm:w-7 sm:h-7" aria-hidden="true" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-lg font-bold text-zinc-100">
-              Tải hàng loạt ảnh từ máy tính hoặc dán link Google Drive
+            <h1 className="text-base sm:text-lg font-bold text-zinc-100">
+              Tải hàng loạt ảnh từ máy hoặc dán link Google Drive
             </h1>
             <p className="text-xs text-zinc-400 leading-relaxed">
               Không gian{' '}
@@ -1062,11 +1135,11 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
               , chỉnh màu tự nhiên, cắt tỷ lệ và xuất hàng loạt giữ trọn độ nét.
             </p>
           </div>
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+          <div className="pt-1 sm:pt-2 flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={() => bulkFileInputRef.current?.click()}
-              className="px-5 py-2.5 text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+              className="px-5 py-3 sm:py-2.5 text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
             >
               <ImagePlus className="w-4 h-4" aria-hidden="true" />
               <span>Chọn hàng loạt ảnh từ máy</span>
@@ -1075,7 +1148,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
             <button
               type="button"
               onClick={() => bulkFolderInputRef.current?.click()}
-              className="px-4 py-2.5 text-xs font-semibold text-zinc-200 bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+              className="hidden sm:flex px-4 py-2.5 text-xs font-semibold text-zinc-200 bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors items-center justify-center gap-2 cursor-pointer"
             >
               <FolderUp
                 className="w-4 h-4 text-amber-400"
@@ -1087,7 +1160,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
             <button
               type="button"
               onClick={onFocusDriveInput}
-              className="px-4 py-2.5 text-xs font-medium text-zinc-300 hover:text-white bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors cursor-pointer"
+              className="px-4 py-3 sm:py-2.5 text-xs font-medium text-zinc-200 hover:text-white bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors cursor-pointer"
             >
               Dán link Google Drive
             </button>
@@ -1119,10 +1192,13 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
           0
         )
       : null;
+  const loupePadX =
+    loupeBounds.width < 560 ? 16 : loupeBounds.width < 900 ? 56 : 96;
+  const loupePadY = loupeBounds.height < 360 ? 10 : 20;
   const loupeFit = loupeGeom
     ? fitAspectRatioInBox(
-        Math.max(200, loupeBounds.width - 96),
-        Math.max(180, loupeBounds.height - 20),
+        Math.max(160, loupeBounds.width - loupePadX),
+        Math.max(120, loupeBounds.height - loupePadY),
         loupeGeom.cropW,
         loupeGeom.cropH
       )
@@ -1141,6 +1217,39 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
     setLoupeTransform({ itemId: null, zoom: 1, pan: { x: 0, y: 0 } });
     setIsLoupePanning(false);
     loupePanStartRef.current = null;
+  };
+
+  const applyLoupeToggleZoomAt = (clientX: number, clientY: number) => {
+    if (!activeItem) return;
+    if (activeItem.mediaType === 'video') {
+      onOpenLightbox(activeItem);
+      return;
+    }
+    if (effectiveLoupeZoom > 1.05) {
+      handleResetLoupeZoom();
+      return;
+    }
+    const el = loupeViewportRef.current;
+    const targetZoom = 2.5;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const offsetX = clientX - (rect.left + rect.width / 2);
+      const offsetY = clientY - (rect.top + rect.height / 2);
+      setLoupeTransform({
+        itemId: activeItem.id,
+        zoom: targetZoom,
+        pan: {
+          x: Number((offsetX * (1 - targetZoom)).toFixed(1)),
+          y: Number((offsetY * (1 - targetZoom)).toFixed(1)),
+        },
+      });
+    } else {
+      setLoupeTransform({
+        itemId: activeItem.id,
+        zoom: targetZoom,
+        pan: { x: 0, y: 0 },
+      });
+    }
   };
 
   const handleLoupeMouseDown = (e: React.MouseEvent) => {
@@ -1179,37 +1288,165 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   };
 
   const handleLoupeDoubleClick = (e: React.MouseEvent) => {
-    if (!activeItem) return;
-    if (activeItem.mediaType === 'video') {
-      onOpenLightbox(activeItem);
+    applyLoupeToggleZoomAt(e.clientX, e.clientY);
+  };
+
+  // Touch gestures (phones, iPads & touch laptops):
+  // 2-finger pinch zoom + simultaneous pan, 1-finger pan when zoomed,
+  // 1-finger horizontal swipe prev/next at 1x, double-tap 1x <-> 2.5x.
+  const handleLoupeTouchStart = (e: React.TouchEvent) => {
+    if (!activeItem || activeItem.mediaType !== 'image') return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, [data-logo-layer="true"]')) return;
+
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      const midX = (t0.clientX + t1.clientX) / 2;
+      const midY = (t0.clientY + t1.clientY) / 2;
+      loupeTouchRef.current = {
+        mode: 'pinch',
+        startX: midX,
+        startY: midY,
+        startTime: Date.now(),
+        panX: effectiveLoupePan.x,
+        panY: effectiveLoupePan.y,
+        pinchDist: Math.max(1, dist),
+        pinchMidX: midX,
+        pinchMidY: midY,
+      };
+      setIsLoupePanning(true);
       return;
     }
-    if (effectiveLoupeZoom > 1.05) {
-      handleResetLoupeZoom();
-      return;
-    }
-    const el = loupeViewportRef.current;
-    const targetZoom = 2.5;
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      const offsetX = e.clientX - (rect.left + rect.width / 2);
-      const offsetY = e.clientY - (rect.top + rect.height / 2);
-      setLoupeTransform({
-        itemId: activeItem.id,
-        zoom: targetZoom,
-        pan: {
-          x: Number((offsetX * (1 - targetZoom)).toFixed(1)),
-          y: Number((offsetY * (1 - targetZoom)).toFixed(1)),
-        },
-      });
-    } else {
-      setLoupeTransform({
-        itemId: activeItem.id,
-        zoom: targetZoom,
-        pan: { x: 0, y: 0 },
-      });
+
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const isZoomed = effectiveLoupeZoom > 1.01;
+      loupeTouchRef.current = {
+        mode: isZoomed ? 'pan' : 'swipe',
+        startX: t.clientX,
+        startY: t.clientY,
+        startTime: Date.now(),
+        panX: effectiveLoupePan.x,
+        panY: effectiveLoupePan.y,
+        pinchDist: 0,
+        pinchMidX: 0,
+        pinchMidY: 0,
+      };
+      if (isZoomed) {
+        setIsLoupePanning(true);
+      }
     }
   };
+
+  const handleLoupeTouchMove = (e: React.TouchEvent) => {
+    if (!activeItem || activeItem.mediaType !== 'image') return;
+    const g = loupeTouchRef.current;
+
+    if (g.mode === 'pinch' && e.touches.length >= 2) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dist = Math.max(
+        1,
+        Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
+      );
+      const midX = (t0.clientX + t1.clientX) / 2;
+      const midY = (t0.clientY + t1.clientY) / 2;
+      const scaleFactor = dist / Math.max(1, g.pinchDist);
+      const panDelta = { x: midX - g.pinchMidX, y: midY - g.pinchMidY };
+      g.pinchDist = dist;
+      g.pinchMidX = midX;
+      g.pinchMidY = midY;
+
+      const el = loupeViewportRef.current;
+      const rect = el?.getBoundingClientRect();
+      const midpointOffset = rect
+        ? {
+            x: midX - (rect.left + rect.width / 2),
+            y: midY - (rect.top + rect.height / 2),
+          }
+        : { x: 0, y: 0 };
+
+      const activeId = activeItem.id;
+      setLoupeTransform((prev) => {
+        const baseZoom = prev.itemId === activeId ? prev.zoom : 1;
+        const basePan =
+          prev.itemId === activeId ? prev.pan : { x: 0, y: 0 };
+        const next = computePinchZoomState(
+          baseZoom,
+          basePan,
+          scaleFactor,
+          midpointOffset,
+          panDelta,
+          1,
+          5
+        );
+        return { itemId: activeId, zoom: next.zoom, pan: next.pan };
+      });
+      return;
+    }
+
+    if (g.mode === 'pan' && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - g.startX;
+      const dy = t.clientY - g.startY;
+      const activeId = activeItem.id;
+      setLoupeTransform((prev) => ({
+        itemId: activeId,
+        zoom: prev.itemId === activeId ? prev.zoom : effectiveLoupeZoom,
+        pan: { x: g.panX + dx, y: g.panY + dy },
+      }));
+    }
+  };
+
+  const handleLoupeTouchEnd = (e: React.TouchEvent) => {
+    const g = loupeTouchRef.current;
+    if (e.touches.length === 0) {
+      if (g.mode === 'swipe' && e.changedTouches.length === 1) {
+        const t = e.changedTouches[0];
+        const dx = t.clientX - g.startX;
+        const dy = t.clientY - g.startY;
+        const dt = Date.now() - g.startTime;
+        const swipeDir = resolveSwipeDirection(dx, dy, dt);
+        if (swipeDir === 1) {
+          onNextItem();
+          lastLoupeTapRef.current = null;
+        } else if (swipeDir === -1) {
+          onPrevItem();
+          lastLoupeTapRef.current = null;
+        } else if (Math.hypot(dx, dy) < 14 && dt < 260) {
+          const now = Date.now();
+          const prevTap = lastLoupeTapRef.current;
+          if (
+            prevTap &&
+            now - prevTap.time < 280 &&
+            Math.hypot(t.clientX - prevTap.x, t.clientY - prevTap.y) < 28
+          ) {
+            lastLoupeTapRef.current = null;
+            applyLoupeToggleZoomAt(t.clientX, t.clientY);
+          } else {
+            lastLoupeTapRef.current = { time: now, x: t.clientX, y: t.clientY };
+          }
+        }
+      }
+      g.mode = 'none';
+      setIsLoupePanning(false);
+    } else if (g.mode === 'pinch' && e.touches.length === 1) {
+      // One finger lifted after pinch: transition smoothly to idle until next touch
+      g.mode = 'none';
+      setIsLoupePanning(false);
+    }
+  };
+
+  const hasActiveFilters =
+    Boolean(searchQuery.trim()) ||
+    quickFilter !== 'all' ||
+    sortBy !== 'name-asc';
+  const activeLogoCount =
+    activeItem && activeItem.mediaType === 'image'
+      ? getActiveLogos(activeItem.edit).length
+      : 0;
 
   return (
     <div
@@ -1219,7 +1456,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
       }}
       onDragLeave={() => setIsDraggingOver(false)}
       onDrop={handleDropFiles}
-      className="flex-1 bg-[#08080A] flex flex-col min-w-0 overflow-hidden select-none relative"
+      className="flex-1 bg-[#08080A] flex flex-col min-w-0 min-h-0 overflow-hidden select-none relative"
     >
       {hiddenInputs}
 
@@ -1233,134 +1470,246 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
       )}
 
       {/* Sub-header: Search, Quick Filters, Sort, Loupe/Grid Mode & Multi-Select */}
-      <div className="px-4 py-2 bg-[#121215] border-b border-white/10 flex flex-wrap items-center justify-between gap-2.5 shrink-0 text-xs">
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          {/* Filename Search */}
-          <div className="flex items-center bg-[#09090B] border border-white/10 rounded-md px-2 py-1 w-44 focus-within:border-amber-500/70">
-            <Search
-              className="w-3.5 h-3.5 text-zinc-500 mr-1.5 shrink-0"
-              aria-hidden="true"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => onSearchQueryChange(e.target.value)}
-              placeholder="Tìm tên file..."
-              aria-label="Tìm kiếm theo tên file"
-              className="w-full bg-transparent text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => onSearchQueryChange('')}
-                className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
-                aria-label="Xóa từ khóa tìm kiếm"
-              >
-                <X className="w-3 h-3" />
-              </button>
+      <div className="px-2.5 md:px-4 py-1.5 md:py-2 bg-[#121215] border-b border-white/10 flex flex-col gap-2 shrink-0 text-xs">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          {/* Desktop / Tablet (md+) Inline Search, Filter & Sort */}
+          <div className="hidden md:flex items-center gap-1.5 lg:gap-2 min-w-0 flex-wrap">
+            {/* Filename Search */}
+            <div className="flex items-center bg-[#09090B] border border-white/10 rounded-md px-2 py-1 w-32 lg:w-44 focus-within:border-amber-500/70">
+              <Search
+                className="w-3.5 h-3.5 text-zinc-500 mr-1.5 shrink-0"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchQueryChange(e.target.value)}
+                placeholder="Tìm tên file..."
+                aria-label="Tìm kiếm theo tên file"
+                className="w-full bg-transparent text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none min-w-0"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => onSearchQueryChange('')}
+                  className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                  aria-label="Xóa từ khóa tìm kiếm"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Filter */}
+            <select
+              value={quickFilter}
+              onChange={(e) =>
+                onQuickFilterChange(e.target.value as QuickFilterOption)
+              }
+              aria-label="Bộ lọc nhanh"
+              className="px-2 py-1 rounded-md bg-[#09090B] border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/70 cursor-pointer max-w-36 lg:max-w-none"
+            >
+              <option value="all">Tất cả ({items.length})</option>
+              <option value="edited">Đã chỉnh sửa / gắn Logo</option>
+              <option value="unwatermarked">Chưa gắn Logo</option>
+            </select>
+
+            {/* Sort */}
+            <select
+              value={sortBy}
+              onChange={(e) => onSortByChange(e.target.value as SortByOption)}
+              aria-label="Sắp xếp danh sách"
+              className="px-2 py-1 rounded-md bg-[#09090B] border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/70 cursor-pointer"
+            >
+              <option value="name-asc">Tên A → Z</option>
+              <option value="name-desc">Tên Z → A</option>
+              <option value="resolution-desc">Độ phân giải lớn</option>
+            </select>
+
+            {checkedItemIds.size > 0 && (
+              <span className="text-emerald-400 font-medium truncate">
+                · Đã chọn {checkedItemIds.size}
+              </span>
             )}
           </div>
 
-          {/* Quick Filter */}
-          <select
-            value={quickFilter}
-            onChange={(e) =>
-              onQuickFilterChange(e.target.value as QuickFilterOption)
-            }
-            aria-label="Bộ lọc nhanh"
-            className="px-2 py-1 rounded-md bg-[#09090B] border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/70 cursor-pointer"
-          >
-            <option value="all">Tất cả ({items.length})</option>
-            <option value="edited">Đã chỉnh sửa / gắn Logo</option>
-            <option value="unwatermarked">Chưa gắn Logo</option>
-          </select>
+          {/* Mobile (<md) Compact Left Controls: Loupe/Grid Toggle + Filter Trigger */}
+          <div className="flex md:hidden items-center gap-1.5 min-w-0">
+            <div
+              className="flex items-center bg-[#09090B] border border-white/10 rounded-md p-0.5 shrink-0"
+              role="group"
+              aria-label="Chế độ hiển thị ảnh"
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode('loupe')}
+                className={`px-2 py-1 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors ${
+                  viewMode === 'loupe'
+                    ? 'bg-amber-500 text-zinc-950 font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <PanelBottom className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Loupe</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-2 py-1 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-amber-500 text-zinc-950 font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Lưới</span>
+              </button>
+            </div>
 
-          {/* Sort */}
-          <select
-            value={sortBy}
-            onChange={(e) => onSortByChange(e.target.value as SortByOption)}
-            aria-label="Sắp xếp danh sách"
-            className="px-2 py-1 rounded-md bg-[#09090B] border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/70 cursor-pointer"
-          >
-            <option value="name-asc">Tên A → Z</option>
-            <option value="name-desc">Tên Z → A</option>
-            <option value="resolution-desc">Độ phân giải lớn</option>
-          </select>
-
-          {checkedItemIds.size > 0 && (
-            <span className="text-emerald-400 font-medium truncate">
-              · Đã chọn {checkedItemIds.size} ảnh
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* Obsidian Loupe vs Grid Mode Toggle */}
-          <div
-            className="flex items-center bg-[#09090B] border border-white/10 rounded-md p-0.5 mr-1"
-            role="group"
-            aria-label="Chế độ hiển thị ảnh"
-          >
             <button
               type="button"
-              onClick={() => setViewMode('loupe')}
-              className={`px-2 py-1 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors ${
-                viewMode === 'loupe'
-                  ? 'bg-amber-500 text-zinc-950 font-bold'
-                  : 'text-zinc-400 hover:text-zinc-200'
+              onClick={() => setMobileFiltersOpen((v) => !v)}
+              aria-expanded={mobileFiltersOpen}
+              className={`relative px-2 py-1.5 rounded-md border text-xs flex items-center gap-1 cursor-pointer transition-colors shrink-0 ${
+                mobileFiltersOpen || hasActiveFilters
+                  ? 'bg-amber-500/15 border-amber-500/45 text-amber-300'
+                  : 'bg-[#09090B] border-white/10 text-zinc-300'
               }`}
-              title="Xem ảnh lớn + dải Filmstrip phía dưới (Lightroom)"
             >
-              <PanelBottom className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Loupe</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`px-2 py-1 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors ${
-                viewMode === 'grid'
-                  ? 'bg-amber-500 text-zinc-950 font-bold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-              title="Xem dạng lưới nhiều cột"
-            >
-              <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Lưới</span>
+              <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Lọc</span>
+              {hasActiveFilters && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              )}
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => bulkFileInputRef.current?.click()}
-            className="px-2.5 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-medium flex items-center gap-1 cursor-pointer transition-colors"
-            title="Thêm ảnh từ máy tính vào danh sách"
-          >
-            <ImagePlus className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">+ Thêm ảnh</span>
-          </button>
-
-          {visiblePhotoCount > 0 && (
-            <>
+          {/* Right Controls */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Desktop/Tablet Loupe vs Grid Mode Toggle */}
+            <div
+              className="hidden md:flex items-center bg-[#09090B] border border-white/10 rounded-md p-0.5 mr-0.5"
+              role="group"
+              aria-label="Chế độ hiển thị ảnh"
+            >
               <button
                 type="button"
-                onClick={onSelectAllVisiblePhotos}
-                className="px-2.5 py-1 rounded bg-[#09090B] hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                onClick={() => setViewMode('loupe')}
+                className={`px-2 py-1 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors ${
+                  viewMode === 'loupe'
+                    ? 'bg-amber-500 text-zinc-950 font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+                title="Xem ảnh lớn + dải Filmstrip phía dưới (Lightroom)"
               >
-                <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Chọn hết ({visiblePhotoCount})</span>
+                <PanelBottom className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Loupe</span>
               </button>
-              {checkedItemIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-2 py-1 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-amber-500 text-zinc-950 font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+                title="Xem dạng lưới nhiều cột"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Lưới</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => bulkFileInputRef.current?.click()}
+              className="hidden md:flex px-2 lg:px-2.5 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-medium items-center gap-1 cursor-pointer transition-colors"
+              title="Thêm ảnh từ máy vào danh sách"
+            >
+              <ImagePlus className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden xl:inline">+ Thêm ảnh</span>
+            </button>
+
+            {visiblePhotoCount > 0 && (
+              <>
                 <button
                   type="button"
-                  onClick={onClearCheckedItems}
-                  className="px-2 py-1 rounded bg-[#09090B] hover:bg-zinc-800 border border-white/10 text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors"
+                  onClick={onSelectAllVisiblePhotos}
+                  className="px-2 md:px-2.5 py-1.5 md:py-1 rounded bg-[#09090B] hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap"
                 >
-                  Bỏ chọn ({checkedItemIds.size})
+                  <CheckSquare className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="hidden sm:inline">Chọn hết</span>
+                  <span className="font-mono tabular-nums">
+                    ({visiblePhotoCount})
+                  </span>
+                </button>
+                {checkedItemIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={onClearCheckedItems}
+                    className="px-2 py-1.5 md:py-1 rounded bg-[#09090B] hover:bg-zinc-800 border border-white/10 text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors whitespace-nowrap"
+                  >
+                    Bỏ ({checkedItemIds.size})
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile (<md) Collapsible Search, Filter & Sort Drawer Row */}
+        {mobileFiltersOpen && (
+          <div className="md:hidden pt-1 pb-0.5 border-t border-white/10 space-y-2">
+            <div className="flex items-center bg-[#09090B] border border-white/10 rounded-lg px-2.5 h-9 focus-within:border-amber-500/70">
+              <Search
+                className="w-3.5 h-3.5 text-zinc-500 mr-2 shrink-0"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchQueryChange(e.target.value)}
+                placeholder="Tìm tên file..."
+                aria-label="Tìm kiếm theo tên file"
+                className="w-full bg-transparent text-base text-zinc-200 placeholder-zinc-500 focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => onSearchQueryChange('')}
+                  className="text-zinc-400 hover:text-zinc-200 p-1 cursor-pointer"
+                  aria-label="Xóa từ khóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
-            </>
-          )}
-        </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={quickFilter}
+                onChange={(e) =>
+                  onQuickFilterChange(e.target.value as QuickFilterOption)
+                }
+                aria-label="Bộ lọc nhanh"
+                className="h-9 px-2 rounded-lg bg-[#09090B] border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/70 cursor-pointer"
+              >
+                <option value="all">Tất cả ({items.length})</option>
+                <option value="edited">Đã chỉnh / gắn Logo</option>
+                <option value="unwatermarked">Chưa gắn Logo</option>
+              </select>
+              <select
+                value={sortBy}
+                onChange={(e) => onSortByChange(e.target.value as SortByOption)}
+                aria-label="Sắp xếp danh sách"
+                className="h-9 px-2 rounded-lg bg-[#09090B] border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/70 cursor-pointer"
+              >
+                <option value="name-asc">Tên A → Z</option>
+                <option value="name-desc">Tên Z → A</option>
+                <option value="resolution-desc">Độ phân giải lớn</option>
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {items.length === 0 ? (
@@ -1376,7 +1725,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
         </main>
       ) : viewMode === 'loupe' && activeItem && loupeStageItem ? (
         <main className="flex-1 bg-[#08080A] flex flex-col min-h-0 overflow-hidden">
-          {/* Center Large Loupe Stage (Scroll wheel to zoom, drag to pan, double-click 1x/2.5x) */}
+          {/* Center Large Loupe Stage (Mouse wheel / Pinch zoom 100%-500%, drag to pan, swipe prev/next, double-tap 1x/2.5x) */}
           <div
             ref={loupeViewportRef}
             onMouseDown={handleLoupeMouseDown}
@@ -1384,7 +1733,13 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
             onMouseUp={handleLoupeMouseUp}
             onMouseLeave={handleLoupeMouseUp}
             onDoubleClick={handleLoupeDoubleClick}
-            className="flex-1 relative flex items-center justify-center p-4 min-h-0 overflow-hidden"
+            onTouchStart={handleLoupeTouchStart}
+            onTouchMove={handleLoupeTouchMove}
+            onTouchEnd={handleLoupeTouchEnd}
+            onTouchCancel={handleLoupeTouchEnd}
+            className={`flex-1 relative flex items-center justify-center p-2 sm:p-4 min-h-0 overflow-hidden ${
+              loupeStageItem.mediaType === 'image' ? 'touch-none' : ''
+            }`}
           >
             <button
               type="button"
@@ -1392,7 +1747,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
               onDoubleClick={(e) => e.stopPropagation()}
               onClick={onPrevItem}
               aria-label="Ảnh trước"
-              className="absolute left-3.5 z-20 w-9 h-9 rounded-full bg-[#16161B]/90 hover:bg-zinc-800 border border-white/15 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
+              className="hidden sm:flex absolute left-3.5 z-20 w-9 h-9 rounded-full bg-[#16161B]/90 hover:bg-zinc-800 border border-white/15 text-zinc-200 items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -1477,29 +1832,92 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
               onDoubleClick={(e) => e.stopPropagation()}
               onClick={onNextItem}
               aria-label="Ảnh tiếp theo"
-              className="absolute right-3.5 z-20 w-9 h-9 rounded-full bg-[#16161B]/90 hover:bg-zinc-800 border border-white/15 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
+              className="hidden sm:flex absolute right-3.5 z-20 w-9 h-9 rounded-full bg-[#16161B]/90 hover:bg-zinc-800 border border-white/15 text-zinc-200 items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Floating Bottom Pill Action Toolbar */}
-          <div className="shrink-0 flex justify-center pb-2.5 px-3">
-            <div className="px-3.5 py-1.5 rounded-full bg-[#16161B]/95 border border-white/15 shadow-2xl flex flex-wrap items-center justify-center gap-2 text-xs">
+          {/* Mobile (<md) Compact Counter & Quick Zoom/Undo Strip (hidden while Bottom Sheet is open) */}
+          {!isInspectorOpen && (
+            <div className="md:hidden shrink-0 px-2.5 pb-1.5 flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={onPrevItem}
+                  aria-label="Ảnh trước"
+                  className="w-8 h-8 rounded-full bg-[#16161B] border border-white/10 text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="font-mono tabular-nums text-zinc-300 px-1 shrink-0">
+                  {selectedIndex + 1}/{items.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={onNextItem}
+                  aria-label="Ảnh sau"
+                  className="w-8 h-8 rounded-full bg-[#16161B] border border-white/10 text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <span
+                  className="text-zinc-400 truncate text-[11px] pl-1"
+                  title={activeItem.name}
+                >
+                  {activeItem.name}
+                </span>
+                {isLoupePending && (
+                  <Loader2
+                    className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0"
+                    aria-label="Đang tải ảnh"
+                  />
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {activeItem.mediaType === 'image' && effectiveLoupeZoom > 1.01 && (
+                  <button
+                    type="button"
+                    onClick={handleResetLoupeZoom}
+                    className="h-7 px-2 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{Math.round(effectiveLoupeZoom * 100)}%</span>
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                )}
+                {canUndoReject && onUndoReject && (
+                  <button
+                    type="button"
+                    onClick={onUndoReject}
+                    aria-label="Hoàn tác loại bỏ"
+                    className="h-7 px-2 rounded-full bg-[#16161B] border border-white/15 text-amber-300 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Hoàn tác</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Tablet & Desktop (md+) Floating Bottom Pill Action Toolbar */}
+          <div className="hidden md:flex shrink-0 justify-center pb-2.5 px-3">
+            <div className="px-3 py-1.5 rounded-full bg-[#16161B]/95 border border-white/15 shadow-2xl flex items-center justify-center gap-1.5 lg:gap-2 text-xs max-w-full">
               <button
                 type="button"
                 onClick={onPrevItem}
                 aria-label="Ảnh trước"
-                className="p-1 rounded-full hover:bg-white/10 text-zinc-300 cursor-pointer"
+                className="p-1 rounded-full hover:bg-white/10 text-zinc-300 cursor-pointer shrink-0"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
 
-              <span className="font-mono tabular-nums text-zinc-400">
+              <span className="font-mono tabular-nums text-zinc-400 shrink-0">
                 {selectedIndex + 1} / {items.length}
               </span>
               <span
-                className="font-medium text-zinc-100 max-w-44 truncate"
+                className="font-medium text-zinc-100 max-w-28 lg:max-w-44 truncate"
                 title={activeItem.name}
               >
                 {activeItem.name}
@@ -1515,12 +1933,12 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                 type="button"
                 onClick={onNextItem}
                 aria-label="Ảnh sau"
-                className="p-1 rounded-full hover:bg-white/10 text-zinc-300 cursor-pointer"
+                className="p-1 rounded-full hover:bg-white/10 text-zinc-300 cursor-pointer shrink-0"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
 
-              <span className="text-white/15" aria-hidden="true">
+              <span className="text-white/15 shrink-0" aria-hidden="true">
                 |
               </span>
 
@@ -1531,23 +1949,26 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                     onPointerDown={() => onCompareOriginalChange(true)}
                     onPointerUp={() => onCompareOriginalChange(false)}
                     onPointerLeave={() => onCompareOriginalChange(false)}
-                    className={`px-2 py-0.5 rounded-full border flex items-center gap-1 cursor-pointer ${
+                    onPointerCancel={() => onCompareOriginalChange(false)}
+                    className={`px-2 py-1 rounded-full border flex items-center gap-1 cursor-pointer shrink-0 touch-none ${
                       compareOriginal
                         ? 'bg-sky-500/20 border-sky-400 text-sky-200'
                         : 'bg-[#09090B] border-white/10 text-zinc-300 hover:text-white'
                     }`}
                   >
                     <SplitSquareHorizontal className="w-3 h-3 text-sky-400" />
-                    <span className="hidden md:inline">Gốc (\)</span>
+                    <span className="hidden lg:inline">Gốc (\)</span>
+                    <span className="lg:hidden">Gốc</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => onOpenCropModal(activeItem)}
-                    className="px-2 py-0.5 rounded-full bg-[#09090B] hover:bg-zinc-800 border border-white/10 text-zinc-200 flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-1 rounded-full bg-[#09090B] hover:bg-zinc-800 border border-white/10 text-zinc-200 flex items-center gap-1 cursor-pointer shrink-0"
                   >
                     <Crop className="w-3 h-3 text-amber-400" />
-                    <span>Cắt (C)</span>
+                    <span className="hidden lg:inline">Cắt (C)</span>
+                    <span className="lg:hidden">Cắt</span>
                   </button>
                 </>
               )}
@@ -1557,7 +1978,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                   type="button"
                   onClick={handleResetLoupeZoom}
                   title="Bấm để đưa về 100% (hoặc nhấp đúp lên ảnh)"
-                  className="px-2 py-0.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-mono tabular-nums flex items-center gap-1 cursor-pointer"
+                  className="px-2 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-mono tabular-nums flex items-center gap-1 cursor-pointer shrink-0"
                 >
                   <span>{Math.round(effectiveLoupeZoom * 100)}%</span>
                   <RotateCcw className="w-3 h-3" />
@@ -1567,7 +1988,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
               <button
                 type="button"
                 onClick={() => onToggleRejectStatus(activeItem)}
-                className={`px-2.5 py-0.5 rounded-full font-semibold flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-full font-semibold flex items-center gap-1 cursor-pointer shrink-0 ${
                   activeItem.status === 'kept'
                     ? 'bg-rose-600/95 hover:bg-rose-500 text-white'
                     : 'bg-emerald-600/95 hover:bg-emerald-500 text-white'
@@ -1576,7 +1997,8 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                 {activeItem.status === 'kept' ? (
                   <>
                     <Trash2 className="w-3 h-3" />
-                    <span>Loại (X)</span>
+                    <span className="hidden lg:inline">Loại (X)</span>
+                    <span className="lg:hidden">Loại</span>
                   </>
                 ) : (
                   <>
@@ -1588,7 +2010,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
             </div>
           </div>
 
-          {/* Virtualized Horizontal Filmstrip */}
+          {/* Virtualized Horizontal Filmstrip (hidden on mobile while Bottom Sheet is open so photo stays live above) */}
           <div
             ref={filmstripRef}
             onWheel={(e) => {
@@ -1599,7 +2021,9 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                 filmstripRef.current.scrollLeft += e.deltaY;
               }
             }}
-            className="h-22 bg-[#101013] border-t border-white/10 px-3 py-2 shrink-0 overflow-x-auto overflow-y-hidden"
+            className={`${
+              isInspectorOpen ? 'hidden md:block' : 'block'
+            } h-[68px] md:h-22 bg-[#101013] border-t border-white/10 px-2.5 md:px-3 py-1.5 md:py-2 shrink-0 overflow-x-auto overflow-y-hidden no-scrollbar`}
           >
             <div
               style={{
@@ -1624,7 +2048,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                       top: 0,
                       left: 0,
                       width: '96px',
-                      height: '68px',
+                      height: '100%',
                       transform: `translateX(${virtualItem.start}px)`,
                     }}
                     className={`group rounded-md overflow-hidden border-2 bg-[#08080A] cursor-pointer transition-all ${
@@ -1661,7 +2085,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                         className={`absolute top-1 left-1 p-0.5 rounded border z-20 cursor-pointer ${
                           isChecked
                             ? 'opacity-100 bg-emerald-600 border-emerald-500 text-white'
-                            : 'opacity-0 group-hover:opacity-100 bg-black/75 border-white/25 text-zinc-200'
+                            : 'opacity-0 group-hover:opacity-100 touch-action-visible bg-black/75 border-white/25 text-zinc-200'
                         }`}
                       >
                         {isChecked ? (
@@ -1684,7 +2108,10 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
           </div>
         </main>
       ) : (
-        <main ref={parentRef} className="flex-1 overflow-y-auto p-4 bg-[#08080A]">
+        <main
+          ref={parentRef}
+          className="flex-1 overflow-y-auto p-2.5 sm:p-4 bg-[#08080A]"
+        >
           <div
             style={{
               height: `${rowVirtualizer.getTotalSize()}px`,
@@ -1707,12 +2134,12 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                     width: '100%',
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
-                  className="pb-3.5"
+                  className="pb-2.5 sm:pb-3.5"
                 >
                   <div
-                    className="grid gap-3.5"
+                    className="grid gap-2.5 sm:gap-3.5"
                     style={{
-                      gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `repeat(${effectiveGridColumns}, minmax(0, 1fr))`,
                     }}
                   >
                     {rowItems.map((item) => {
@@ -1747,11 +2174,11 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                               <>
                                 <VideoThumbnailImage item={item} />
                                 <div className="absolute inset-0 bg-black/30 group-hover:bg-black/45 transition-colors flex items-center justify-center">
-                                  <div className="w-11 h-11 rounded-full bg-[#121215]/90 border border-white/15 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
-                                    <Play className="w-5 h-5 fill-white ml-0.5" />
+                                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#121215]/90 border border-white/15 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+                                    <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-white ml-0.5" />
                                   </div>
                                 </div>
-                                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-[11px] font-mono tabular-nums text-zinc-100">
+                                <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] sm:text-[11px] font-mono tabular-nums text-zinc-100">
                                   {formatVideoDuration(item.durationMillis)}
                                 </div>
                               </>
@@ -1767,7 +2194,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                               />
                             )}
 
-                            {/* Top-Left Multi-Select Checkbox (supports Shift+Click range!) */}
+                            {/* Top-Left Multi-Select Checkbox (always visible on touch devices via touch-action-visible) */}
                             {item.mediaType === 'image' && (
                               <button
                                 type="button"
@@ -1777,10 +2204,10 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                                 aria-label={
                                   isChecked ? 'Bỏ chọn ảnh' : 'Chọn ảnh'
                                 }
-                                className={`absolute top-2 left-2 p-1 rounded-md border transition-opacity z-20 cursor-pointer ${
+                                className={`absolute top-1.5 left-1.5 sm:top-2 sm:left-2 p-1.5 sm:p-1 rounded-md border transition-opacity z-20 cursor-pointer ${
                                   isChecked
                                     ? 'opacity-100 bg-emerald-600 border-emerald-500 text-white'
-                                    : 'opacity-0 group-hover:opacity-100 bg-[#121215]/85 border-white/15 text-zinc-300 hover:text-white'
+                                    : 'opacity-0 group-hover:opacity-100 touch-action-visible bg-[#121215]/85 border-white/15 text-zinc-300 hover:text-white'
                                 }`}
                                 title="Tích chọn ảnh (Giữ Shift + Click để chọn cả dải ảnh liên tiếp)"
                               >
@@ -1792,8 +2219,8 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                               </button>
                             )}
 
-                            {/* Hover Top-Right Quick Actions */}
-                            <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                            {/* Hover / Touch Top-Right Quick Actions */}
+                            <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 flex items-center gap-1 sm:gap-1.5 opacity-0 group-hover:opacity-100 touch-action-visible transition-opacity z-20">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1810,7 +2237,12 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                               <button
                                 type="button"
                                 onClick={(e) => onToggleRejectStatus(item, e)}
-                                className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 border shadow-xs cursor-pointer whitespace-nowrap ${
+                                aria-label={
+                                  item.status === 'kept'
+                                    ? 'Loại bỏ ảnh'
+                                    : 'Khôi phục ảnh'
+                                }
+                                className={`p-1.5 sm:px-2 sm:py-1 rounded-md text-xs font-medium flex items-center gap-1 border shadow-xs cursor-pointer whitespace-nowrap ${
                                   item.status === 'kept'
                                     ? 'bg-rose-600/95 hover:bg-rose-500 text-white border-rose-500'
                                     : 'bg-emerald-600/95 hover:bg-emerald-500 text-white border-emerald-500'
@@ -1819,12 +2251,16 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                                 {item.status === 'kept' ? (
                                   <>
                                     <Trash2 className="w-3 h-3" />
-                                    <span>Loại</span>
+                                    <span className="hidden sm:inline">
+                                      Loại
+                                    </span>
                                   </>
                                 ) : (
                                   <>
                                     <RotateCcw className="w-3 h-3" />
-                                    <span>Khôi phục</span>
+                                    <span className="hidden sm:inline">
+                                      Khôi phục
+                                    </span>
                                   </>
                                 )}
                               </button>
@@ -1832,7 +2268,7 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
 
                             {/* Bottom-Left Edit & Multi-Logo Indicators */}
                             {editFlags.hasAnyEdit && (
-                              <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/80 text-[11px] text-zinc-200 flex items-center gap-2 z-10 max-w-[75%]">
+                              <div className="absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-1.5 sm:px-2 py-0.5 rounded bg-black/80 text-[10px] sm:text-[11px] text-zinc-200 flex items-center gap-1.5 sm:gap-2 z-10 max-w-[82%]">
                                 {editFlags.isCropped && (
                                   <span
                                     className="flex items-center gap-1 text-amber-300 shrink-0"
@@ -1867,15 +2303,15 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                           </div>
 
                           {/* Card Footer */}
-                          <div className="px-3 py-2 bg-[#121215] border-t border-white/10 flex items-center justify-between gap-2">
+                          <div className="px-2.5 sm:px-3 py-1.5 sm:py-2 bg-[#121215] border-t border-white/10 flex items-center justify-between gap-2">
                             <div className="min-w-0">
                               <div
-                                className="text-xs font-medium text-zinc-200 truncate"
+                                className="text-[11px] sm:text-xs font-medium text-zinc-200 truncate"
                                 title={item.name}
                               >
                                 {item.name}
                               </div>
-                              <div className="text-[11px] text-zinc-500 truncate flex items-center gap-1.5">
+                              <div className="text-[10px] sm:text-[11px] text-zinc-500 truncate flex items-center gap-1">
                                 <span className="truncate">
                                   {item.folderName}
                                 </span>
@@ -1895,6 +2331,89 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
             })}
           </div>
         </main>
+      )}
+
+      {/* Mobile (<md) Thumb-Zone Bottom Action Bar (Lightroom Mobile style, hidden when Bottom Sheet is open) */}
+      {activeItem && !isInspectorOpen && (
+        <nav
+          aria-label="Thao tác chỉnh sửa nhanh"
+          className="md:hidden shrink-0 bg-[#121215] border-t border-white/10 px-1.5 pt-1.5 pb-safe grid grid-cols-5 gap-1"
+        >
+          <button
+            type="button"
+            onClick={() => onOpenInspectorTab?.('color')}
+            className="min-h-[46px] rounded-lg hover:bg-white/5 active:bg-white/10 text-zinc-200 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium cursor-pointer"
+          >
+            <Sliders className="w-4 h-4 text-amber-400" aria-hidden="true" />
+            <span>Chỉnh màu</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOpenInspectorTab?.('logo')}
+            className="relative min-h-[46px] rounded-lg hover:bg-white/5 active:bg-white/10 text-zinc-200 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium cursor-pointer"
+          >
+            <Stamp className="w-4 h-4 text-emerald-400" aria-hidden="true" />
+            <span>Logo</span>
+            {activeLogoCount > 0 && (
+              <span className="absolute top-1 right-2.5 min-w-4 h-4 px-1 rounded-full bg-emerald-500 text-zinc-950 font-mono text-[9px] font-bold flex items-center justify-center">
+                {activeLogoCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={activeItem.mediaType !== 'image'}
+            onClick={() => onOpenCropModal(activeItem)}
+            className="min-h-[46px] rounded-lg hover:bg-white/5 active:bg-white/10 disabled:opacity-35 text-zinc-200 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium cursor-pointer"
+          >
+            <Crop className="w-4 h-4 text-amber-400" aria-hidden="true" />
+            <span>Cắt ảnh</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={activeItem.mediaType !== 'image'}
+            onPointerDown={() => onCompareOriginalChange(true)}
+            onPointerUp={() => onCompareOriginalChange(false)}
+            onPointerLeave={() => onCompareOriginalChange(false)}
+            onPointerCancel={() => onCompareOriginalChange(false)}
+            className={`min-h-[46px] rounded-lg disabled:opacity-35 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium cursor-pointer touch-none ${
+              compareOriginal
+                ? 'bg-sky-500/20 text-sky-200'
+                : 'hover:bg-white/5 text-zinc-200'
+            }`}
+          >
+            <SplitSquareHorizontal
+              className="w-4 h-4 text-sky-400"
+              aria-hidden="true"
+            />
+            <span>Giữ gốc</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onToggleRejectStatus(activeItem)}
+            className={`min-h-[46px] rounded-lg flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold cursor-pointer ${
+              activeItem.status === 'kept'
+                ? 'bg-rose-600/20 text-rose-300 active:bg-rose-600/35'
+                : 'bg-emerald-600/20 text-emerald-300 active:bg-emerald-600/35'
+            }`}
+          >
+            {activeItem.status === 'kept' ? (
+              <>
+                <Trash2 className="w-4 h-4" aria-hidden="true" />
+                <span>Loại bỏ</span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-4 h-4" aria-hidden="true" />
+                <span>Khôi phục</span>
+              </>
+            )}
+          </button>
+        </nav>
       )}
     </div>
   );

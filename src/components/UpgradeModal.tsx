@@ -273,23 +273,23 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Nâng cấp Mở khóa Full chức năng CGM Studio"
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 select-none"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 select-none"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-zinc-900">
-          <div className="flex items-center gap-2.5">
-            <Crown className="w-5 h-5 text-amber-400" aria-hidden="true" />
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                Mở Khóa Full Chức Năng — CGM Studio Pro
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-zinc-800 flex items-center justify-between gap-2 bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-zinc-900 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Crown className="w-5 h-5 text-amber-400 shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-sm font-bold text-white truncate">
+                Mở Khóa Full — CGM Studio Pro
               </h2>
-              <p className="text-[11px] text-zinc-400">
-                Không giới hạn số lượng xuất · Ghép Đa Logo · Kéo-thả tự do · Độ phân giải gốc 4K
+              <p className="text-[11px] text-zinc-400 truncate">
+                Xuất không giới hạn · Đa Logo · Kéo-thả tự do · 4K gốc
               </p>
             </div>
           </div>
@@ -297,13 +297,13 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Đóng bảng nâng cấp"
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 shrink-0 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-safe space-y-4 sm:space-y-5">
           {/* Contextual Reason Banner when triggered from a locked feature */}
           {reasonBanner && (
             <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/35 text-xs text-amber-200 flex items-center gap-2.5">
@@ -341,21 +341,22 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
 
           {/* Method Tabs */}
-          <div className="flex items-center gap-1.5 p-1 bg-zinc-950 rounded-xl border border-zinc-800">
+          <div className="flex items-center gap-1 sm:gap-1.5 p-1 bg-zinc-950 rounded-xl border border-zinc-800">
             <button
               type="button"
               onClick={() => {
                 setTab('vietqr');
                 setErrorMsg(null);
               }}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+              className={`flex-1 py-2 px-2 sm:px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
                 tab === 'vietqr'
                   ? 'bg-indigo-600 text-white'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <QrCode className="w-3.5 h-3.5" />
-              <span>Thanh toán tự động VietQR</span>
+              <QrCode className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Thanh toán tự động VietQR</span>
+              <span className="sm:hidden">VietQR</span>
             </button>
 
             <button
@@ -364,14 +365,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 setTab('license');
                 setErrorMsg(null);
               }}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+              className={`flex-1 py-2 px-2 sm:px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
                 tab === 'license'
                   ? 'bg-emerald-600 text-white'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <KeyRound className="w-3.5 h-3.5" />
-              <span>Nhập Mã Kích Hoạt</span>
+              <KeyRound className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Nhập Mã Kích Hoạt</span>
+              <span className="sm:hidden">Mã VIP</span>
             </button>
 
             {profile?.role === 'admin' && (
@@ -381,14 +383,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                   setTab('admin');
                   setErrorMsg(null);
                 }}
-                className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                className={`py-2 px-2 sm:px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors whitespace-nowrap ${
                   tab === 'admin'
                     ? 'bg-amber-600 text-white'
                     : 'text-amber-300/80 hover:text-amber-200'
                 }`}
               >
-                <Shield className="w-3.5 h-3.5" />
-                <span>Tạo Mã VIP</span>
+                <Shield className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Tạo Mã VIP</span>
+                <span className="sm:hidden">Admin</span>
               </button>
             )}
           </div>
@@ -563,7 +566,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                     setLicenseInput(e.target.value.toUpperCase())
                   }
                   placeholder="VD: CGM-VIP-ABCD-1234"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-sm font-mono tracking-wider text-emerald-300 placeholder-zinc-600 focus:outline-none focus:border-emerald-500 uppercase"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-base sm:text-sm font-mono tracking-wider text-emerald-300 placeholder-zinc-600 focus:outline-none focus:border-emerald-500 uppercase"
                 />
                 <p className="text-[11px] text-zinc-400">
                   Sau khi nhập mã hợp lệ, tài khoản{' '}

@@ -11,6 +11,37 @@
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
   }
+
+  button {
+    touch-action: manipulation;
+  }
+}
+
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .touch-action-visible {
+    opacity: 1 !important;
+  }
+
+  input[type='range'] {
+    min-height: 28px;
+  }
 }
 
 /* Custom studio scrollbars */

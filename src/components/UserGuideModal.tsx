@@ -27,10 +27,11 @@ const GUIDE_STEPS: { title: string; body: React.ReactNode }[] = [
     title: '2. Soi & lọc ảnh siêu nhanh',
     body: (
       <>
-        <strong className="text-zinc-200">Lăn chuột trực tiếp lên ảnh</strong>{' '}
-        để zoom tới 500%, giữ chuột trái để kéo xem chi tiết, nhấp đúp để bật/tắt
-        phóng to. Dùng phím <Kbd>←</Kbd> <Kbd>→</Kbd> chuyển ảnh,{' '}
-        <Kbd>X</Kbd> loại bỏ, <Kbd>P</Kbd> giữ lại, <Kbd>Z</Kbd> hoàn tác.
+        <strong className="text-zinc-200">Lăn chuột hoặc chụm 2 ngón</strong> để
+        zoom tới 500%, kéo để xem chi tiết, nhấp đúp để bật/tắt phóng to. Trên
+        điện thoại &amp; iPad có thể <strong className="text-zinc-200">vuốt trái/phải</strong>{' '}
+        đổi ảnh; trên máy tính dùng <Kbd>←</Kbd> <Kbd>→</Kbd>, <Kbd>X</Kbd>{' '}
+        loại, <Kbd>P</Kbd> giữ, <Kbd>Z</Kbd> hoàn tác.
       </>
     ),
   },
@@ -82,14 +83,14 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="user-guide-title"
-      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 select-none"
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2.5 sm:p-4 select-none"
       onClick={onClose}
     >
       <div
-        className="max-w-2xl w-full bg-[#121215] border border-white/15 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+        className="max-w-2xl w-full bg-[#121215] border border-white/15 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-white/10 flex items-start justify-between gap-3">
+        <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/10 flex items-start justify-between gap-3 shrink-0">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-lg bg-amber-500/15 border border-amber-500/35 flex items-center justify-center text-amber-400 shrink-0">
               <BookOpen className="w-4.5 h-4.5" aria-hidden="true" />
@@ -116,11 +117,11 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           </button>
         </div>
 
-        <div className="overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
+        <div className="overflow-y-auto p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-3.5 text-xs">
           {GUIDE_STEPS.map((step) => (
             <div
               key={step.title}
-              className="bg-[#09090B] border border-white/10 rounded-xl p-4 space-y-1.5"
+              className="bg-[#09090B] border border-white/10 rounded-xl p-3.5 sm:p-4 space-y-1.5"
             >
               <div className="font-semibold text-amber-300">{step.title}</div>
               <p className="text-zinc-400 leading-relaxed">{step.body}</p>
@@ -128,7 +129,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           ))}
         </div>
 
-        <div className="px-5 py-3.5 bg-[#0B0B0D] border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 sm:px-5 py-3.5 pb-safe bg-[#0B0B0D] border-t border-white/10 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
             <input
               type="checkbox"

@@ -540,3 +540,78 @@ export function computeCursorZoomState(
     },
   };
 }
+
+/**
+ * Picks responsive Grid column density from actual container width
+ * so phones use 2 columns, portrait tablets use 3, and landscape tablets/desktops use 4.
+ */
+export function getResponsiveGridColumns(
+  containerWidth: number,
+  desktopColumns = 4
+): number {
+  const safeDesktop = Math.max(2, Math.floor(desktopColumns) || 4);
+  if (containerWidth <= 0) return safeDesktop;
+  if (containerWidth < 560) return 2;
+  if (containerWidth < 860) return Math.min(3, safeDesktop);
+  return safeDesktop;
+}
+
+/**
+ * Computes anchored two-finger pinch zoom + simultaneous pan translation on touch screens.
+ */
+export function computePinchZoomState(
+  prevZoom: number,
+  prevPan: { x: number; y: number },
+  scaleFactor: number,
+  midpointOffsetFromCenter: { x: number; y: number },
+  panDelta: { x: number; y: number },
+  minZoom = 1,
+  maxZoom = 5
+): { zoom: number; pan: { x: number; y: number } } {
+  const safePrev = Math.max(minZoom, prevZoom);
+  const safeScale = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  const clamped = Math.max(
+    minZoom,
+    Math.min(maxZoom, Number((safePrev * safeScale).toFixed(2)))
+  );
+
+  if (clamped <= minZoom + 0.01) {
+    return { zoom: minZoom, pan: { x: 0, y: 0 } };
+  }
+
+  const ratio = clamped / safePrev;
+  return {
+    zoom: clamped,
+    pan: {
+      x: Number(
+        (
+          midpointOffsetFromCenter.x -
+          (midpointOffsetFromCenter.x - prevPan.x) * ratio +
+          panDelta.x
+        ).toFixed(1)
+      ),
+      y: Number(
+        (
+          midpointOffsetFromCenter.y -
+          (midpointOffsetFromCenter.y - prevPan.y) * ratio +
+          panDelta.y
+        ).toFixed(1)
+      ),
+    },
+  };
+}
+
+/**
+ * Classifies a 1-finger touch drag on unzoomed Loupe/Lightbox views into prev (-1), next (1), or ignore (0).
+ */
+export function resolveSwipeDirection(
+  dx: number,
+  dy: number,
+  durationMs: number,
+  minDistancePx = 48
+): -1 | 1 | 0 {
+  if (durationMs < 0 || durationMs > 800) return 0;
+  if (Math.abs(dx) < minDistancePx) return 0;
+  if (Math.abs(dy) > Math.abs(dx) * 0.8) return 0;
+  return dx < 0 ? 1 : -1;
+}

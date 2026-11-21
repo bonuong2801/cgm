@@ -20,7 +20,9 @@ import {
 import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 import {
   computeFrameGeometry,
+  computePinchZoomState,
   getInstantPaintState,
+  resolveSwipeDirection,
 } from '../utils/mediaMath.ts';
 import {
   LiveEditedPhotoPreview,
@@ -88,6 +90,30 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     panX: number;
     panY: number;
   } | null>(null);
+  const touchGestureRef = useRef<{
+    mode: 'none' | 'pan' | 'swipe' | 'pinch';
+    startX: number;
+    startY: number;
+    startTime: number;
+    panX: number;
+    panY: number;
+    pinchDist: number;
+    pinchMidX: number;
+    pinchMidY: number;
+  }>({
+    mode: 'none',
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+    panX: 0,
+    panY: 0,
+    pinchDist: 0,
+    pinchMidX: 0,
+    pinchMidY: 0,
+  });
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(
+    null
+  );
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const lastNavAtRef = useRef<number>(0);
   const scrubSettleTimerRef = useRef<number | null>(null);
@@ -96,6 +122,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const effectiveZoom = item && zoomItemId === item.id ? zoom : 1;
   const effectivePan =
     item && zoomItemId === item.id ? pan : { x: 0, y: 0 };
+  const zoomPanRef = useRef({ zoom: effectiveZoom, pan: effectivePan });
+  zoomPanRef.current = { zoom: effectiveZoom, pan: effectivePan };
 
   useEffect(() => {
     return () => {
@@ -351,27 +379,167 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     }
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isVideo) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, [data-logo-layer="true"]')) return;
+
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      const midX = (t0.clientX + t1.clientX) / 2;
+      const midY = (t0.clientY + t1.clientY) / 2;
+      touchGestureRef.current = {
+        mode: 'pinch',
+        startX: midX,
+        startY: midY,
+        startTime: Date.now(),
+        panX: effectivePan.x,
+        panY: effectivePan.y,
+        pinchDist: Math.max(1, dist),
+        pinchMidX: midX,
+        pinchMidY: midY,
+      };
+      setZoomItemId(item.id);
+      setIsDragging(true);
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const isZoomed = effectiveZoom > 1.01;
+      touchGestureRef.current = {
+        mode: isZoomed ? 'pan' : 'swipe',
+        startX: t.clientX,
+        startY: t.clientY,
+        startTime: Date.now(),
+        panX: effectivePan.x,
+        panY: effectivePan.y,
+        pinchDist: 0,
+        pinchMidX: 0,
+        pinchMidY: 0,
+      };
+      if (isZoomed) {
+        setZoomItemId(item.id);
+        setIsDragging(true);
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isVideo) return;
+    const g = touchGestureRef.current;
+
+    if (g.mode === 'pinch' && e.touches.length >= 2) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dist = Math.max(
+        1,
+        Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
+      );
+      const midX = (t0.clientX + t1.clientX) / 2;
+      const midY = (t0.clientY + t1.clientY) / 2;
+      const scaleFactor = dist / Math.max(1, g.pinchDist);
+      const panDelta = { x: midX - g.pinchMidX, y: midY - g.pinchMidY };
+      g.pinchDist = dist;
+      g.pinchMidX = midX;
+      g.pinchMidY = midY;
+
+      const el = viewportRef.current;
+      const rect = el?.getBoundingClientRect();
+      const midpointOffset = rect
+        ? {
+            x: midX - (rect.left + rect.width / 2),
+            y: midY - (rect.top + rect.height / 2),
+          }
+        : { x: 0, y: 0 };
+
+      const next = computePinchZoomState(
+        zoomPanRef.current.zoom,
+        zoomPanRef.current.pan,
+        scaleFactor,
+        midpointOffset,
+        panDelta,
+        1,
+        MAX_ZOOM
+      );
+      zoomPanRef.current = next;
+      setZoomItemId(item.id);
+      setZoom(next.zoom);
+      setPan(next.pan);
+      return;
+    }
+
+    if (g.mode === 'pan' && e.touches.length === 1) {
+      const t = e.touches[0];
+      setPan({
+        x: g.panX + (t.clientX - g.startX),
+        y: g.panY + (t.clientY - g.startY),
+      });
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const g = touchGestureRef.current;
+    if (e.touches.length === 0) {
+      if (g.mode === 'swipe' && e.changedTouches.length === 1) {
+        const t = e.changedTouches[0];
+        const dx = t.clientX - g.startX;
+        const dy = t.clientY - g.startY;
+        const dt = Date.now() - g.startTime;
+        const swipeDir = resolveSwipeDirection(dx, dy, dt);
+        if (swipeDir === 1) {
+          onNext();
+          lastTapRef.current = null;
+        } else if (swipeDir === -1) {
+          onPrev();
+          lastTapRef.current = null;
+        } else if (Math.hypot(dx, dy) < 14 && dt < 260) {
+          const now = Date.now();
+          const prevTap = lastTapRef.current;
+          if (
+            prevTap &&
+            now - prevTap.time < 280 &&
+            Math.hypot(t.clientX - prevTap.x, t.clientY - prevTap.y) < 28
+          ) {
+            lastTapRef.current = null;
+            if (effectiveZoom > 1.05) handleResetZoom();
+            else handleSetZoom(2.5);
+          } else {
+            lastTapRef.current = { time: now, x: t.clientX, y: t.clientY };
+          }
+        }
+      }
+      g.mode = 'none';
+      setIsDragging(false);
+    } else if (g.mode === 'pinch' && e.touches.length === 1) {
+      g.mode = 'none';
+      setIsDragging(false);
+    }
+  };
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={`Xem chi tiết ${item.name}`}
-      className="fixed inset-0 z-50 bg-[#08080A]/98 flex flex-col select-none"
+      className="fixed inset-0 z-50 bg-[#08080A]/98 flex flex-col select-none h-dvh w-full"
       onClick={onClose}
     >
       {/* Top Header Bar */}
       <div
-        className="h-14 px-5 bg-[#121215] border-b border-white/10 flex items-center justify-between gap-4 shrink-0 z-30"
+        className="min-h-13 sm:h-14 px-2.5 sm:px-5 pt-safe bg-[#121215] border-b border-white/10 flex items-center justify-between gap-2 sm:gap-4 shrink-0 z-30"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
           <span className="text-xs font-mono tabular-nums text-zinc-400 shrink-0">
-            {currentIndex + 1} / {totalFiltered}
+            {currentIndex + 1}/{totalFiltered}
           </span>
-          <span className="text-zinc-700" aria-hidden="true">
+          <span className="text-zinc-700 hidden sm:inline" aria-hidden="true">
             ·
           </span>
-          <span className="text-sm font-semibold text-zinc-100 truncate">
+          <span className="text-xs sm:text-sm font-semibold text-zinc-100 truncate">
             {item.name}
           </span>
           {isStagePending && (
@@ -382,9 +550,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           )}
         </div>
 
-        {/* Center Zoom Controls for Photos */}
+        {/* Center Zoom Controls for Photos (compact on md iPad portrait, full slider/presets on lg+) */}
         {!isVideo && (
-          <div className="flex items-center gap-1.5 bg-[#09090B] border border-white/10 rounded-lg px-2 py-1 shrink-0">
+          <div className="hidden md:flex items-center gap-1.5 bg-[#09090B] border border-white/10 rounded-lg px-2 py-1 shrink-0">
             <button
               type="button"
               onClick={() => handleSetZoom(effectiveZoom - ZOOM_STEP)}
@@ -403,10 +571,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               value={effectiveZoom}
               onChange={(e) => handleSetZoom(Number(e.target.value))}
               aria-label="Mức phóng to"
-              className="w-24 accent-amber-400 cursor-pointer"
+              className="hidden lg:block w-24 accent-amber-400 cursor-pointer"
             />
 
-            <span className="w-12 text-center text-xs font-mono tabular-nums text-zinc-200 font-semibold">
+            <span className="w-11 text-center text-xs font-mono tabular-nums text-zinc-200 font-semibold">
               {Math.round(effectiveZoom * 100)}%
             </span>
 
@@ -420,24 +588,26 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
 
-            <div className="h-4 w-px bg-white/10 mx-0.5" />
+            <div className="hidden lg:block h-4 w-px bg-white/10 mx-0.5" />
 
-            {[1, 2, 3, 4].map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() =>
-                  preset === 1 ? handleResetZoom() : handleSetZoom(preset)
-                }
-                className={`px-2 py-1 rounded text-[11px] font-mono tabular-nums transition-colors cursor-pointer ${
-                  Math.abs(effectiveZoom - preset) < 0.1
-                    ? 'bg-amber-500 text-zinc-950 font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
-                }`}
-              >
-                {preset}x
-              </button>
-            ))}
+            <div className="hidden lg:flex items-center gap-0.5">
+              {[1, 2, 3, 4].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() =>
+                    preset === 1 ? handleResetZoom() : handleSetZoom(preset)
+                  }
+                  className={`px-2 py-1 rounded text-[11px] font-mono tabular-nums transition-colors cursor-pointer ${
+                    Math.abs(effectiveZoom - preset) < 0.1
+                      ? 'bg-amber-500 text-zinc-950 font-bold'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                  }`}
+                >
+                  {preset}x
+                </button>
+              ))}
+            </div>
 
             {(effectiveZoom !== 1 ||
               effectivePan.x !== 0 ||
@@ -455,7 +625,17 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         )}
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {!isVideo && effectiveZoom > 1.01 && (
+            <button
+              type="button"
+              onClick={handleResetZoom}
+              className="md:hidden px-2 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-[11px] font-mono text-amber-300 cursor-pointer"
+            >
+              {Math.round(effectiveZoom * 100)}%
+            </button>
+          )}
+
           {!isVideo && (
             <>
               <button
@@ -463,23 +643,27 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 onPointerDown={() => onCompareOriginalChange(true)}
                 onPointerUp={() => onCompareOriginalChange(false)}
                 onPointerLeave={() => onCompareOriginalChange(false)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 cursor-pointer ${
+                onPointerCancel={() => onCompareOriginalChange(false)}
+                aria-label="Giữ để so sánh ảnh gốc"
+                className={`p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 cursor-pointer touch-none ${
                   compareOriginal
                     ? 'bg-sky-500/20 border-sky-400 text-sky-200'
                     : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-200'
                 }`}
               >
                 <SplitSquareHorizontal className="w-3.5 h-3.5 text-sky-400" />
-                <span className="hidden md:inline">So sánh gốc (\)</span>
+                <span className="hidden xl:inline">So sánh gốc (\)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => onOpenCrop(item)}
-                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 border border-zinc-700 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                aria-label="Cắt khung hình ảnh"
+                className="p-2 sm:px-3 sm:py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 border border-zinc-700 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
-                <Crop className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Cắt (C)</span>
+                <Crop className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Cắt</span>
+                <span className="hidden xl:inline">(C)</span>
               </button>
             </>
           )}
@@ -487,7 +671,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           <button
             type="button"
             onClick={() => onToggleReject(item)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            aria-label={item.status === 'kept' ? 'Loại bỏ ảnh' : 'Khôi phục ảnh'}
+            className={`p-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               item.status === 'kept'
                 ? 'bg-rose-600 hover:bg-rose-500 text-white'
                 : 'bg-emerald-600 hover:bg-emerald-500 text-white'
@@ -496,12 +681,13 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             {item.status === 'kept' ? (
               <>
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Loại bỏ (X)</span>
+                <span className="hidden sm:inline">Loại</span>
+                <span className="hidden xl:inline">bỏ (X)</span>
               </>
             ) : (
               <>
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Khôi phục</span>
+                <span className="hidden sm:inline">Khôi phục</span>
               </>
             )}
           </button>
@@ -520,11 +706,17 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       {/* Main Viewport */}
       <div
         ref={viewportRef}
-        className="flex-1 relative flex items-center justify-center p-6 overflow-hidden"
+        className={`flex-1 relative flex items-center justify-center p-2.5 sm:p-6 pb-safe overflow-hidden ${
+          !isVideo ? 'touch-none' : ''
+        }`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       >
         <button
           type="button"
@@ -533,9 +725,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             onPrev();
           }}
           aria-label="File trước"
-          className="absolute left-5 z-20 w-11 h-11 rounded-full bg-zinc-900/85 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
+          className="absolute left-2 sm:left-5 z-20 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
         >
-          <ChevronLeft className="w-6 h-6" />
+          <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
 
         <div
@@ -550,6 +742,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   src={attachAuthToStreamUrl(stageItem.downloadUrl)}
                   controls
                   autoPlay
+                  playsInline
                   onError={() => setVideoFallbackIframe(true)}
                   className="w-full h-full object-contain"
                 />
@@ -608,7 +801,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                     : undefined
                 }
                 style={{
-                  width: `min(82vw, calc(78vh * ${stagePreviewGeom?.cropW || 1600} / ${Math.max(1, stagePreviewGeom?.cropH || 1067)}))`,
+                  width: `min(92vw, calc(78dvh * ${stagePreviewGeom?.cropW || 1600} / ${Math.max(1, stagePreviewGeom?.cropH || 1067)}))`,
                 }}
                 className="rounded-lg shadow-2xl border border-zinc-800"
               />
@@ -623,17 +816,17 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             onNext();
           }}
           aria-label="File tiếp theo"
-          className="absolute right-5 z-20 w-11 h-11 rounded-full bg-zinc-900/85 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
+          className="absolute right-2 sm:right-5 z-20 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
         >
-          <ChevronRight className="w-6 h-6" />
+          <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
 
         {!isVideo && (
           <div
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-lg bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-400 flex items-center gap-3 pointer-events-none shadow-md"
+            className="hidden md:flex absolute bottom-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-lg bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-400 items-center gap-3 pointer-events-none shadow-md whitespace-nowrap"
             onClick={(e) => e.stopPropagation()}
           >
-            <span>Cuộn chuột: Zoom tới 500%</span>
+            <span>Cuộn chuột / chụm 2 ngón: Zoom tới 500%</span>
             {effectiveZoom === 1 && activeLogoCount > 0 && (
               <>
                 <span aria-hidden="true">·</span>
@@ -648,9 +841,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             {effectiveZoom > 1 && (
               <>
                 <span aria-hidden="true">·</span>
-                <span className="text-indigo-300 flex items-center gap-1">
+                <span className="text-amber-300 flex items-center gap-1">
                   <Move className="w-3 h-3" />
-                  <span>Giữ chuột trái để kéo xem chi tiết</span>
+                  <span>Kéo để xem chi tiết</span>
                 </span>
               </>
             )}
