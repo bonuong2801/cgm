@@ -20,7 +20,6 @@ import {
   SplitSquareHorizontal,
   Square,
   Stamp,
-  Star,
   Trash2,
   UploadCloud,
   X,
@@ -29,7 +28,6 @@ import {
   type DriveMediaItem,
   type QuickFilterOption,
   type SortByOption,
-  type StarRating,
   getActiveLogos,
   isPhotoEdited,
 } from '../types/media.ts';
@@ -62,7 +60,6 @@ interface VirtualMediaGridProps {
   onSelectItem: (item: DriveMediaItem) => void;
   onPrevItem: () => void;
   onNextItem: () => void;
-  onRateItem: (itemId: string, rating: StarRating) => void;
   onToggleCheckItem: (
     itemId: string,
     shiftKey: boolean,
@@ -682,7 +679,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   onSelectItem,
   onPrevItem,
   onNextItem,
-  onRateItem,
   onToggleCheckItem,
   onSelectAllVisiblePhotos,
   onClearCheckedItems,
@@ -1277,7 +1273,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
             <option value="all">Tất cả ({items.length})</option>
             <option value="edited">Đã chỉnh sửa / gắn Logo</option>
             <option value="unwatermarked">Chưa gắn Logo</option>
-            <option value="rated">Đã chấm sao (★)</option>
           </select>
 
           {/* Sort */}
@@ -1289,7 +1284,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
           >
             <option value="name-asc">Tên A → Z</option>
             <option value="name-desc">Tên Z → A</option>
-            <option value="rating-desc">Sao cao nhất</option>
             <option value="resolution-desc">Độ phân giải lớn</option>
           </select>
 
@@ -1530,39 +1524,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                 |
               </span>
 
-              <div
-                className="flex items-center gap-0.5"
-                role="group"
-                aria-label="Chấm sao"
-              >
-                {([1, 2, 3, 4, 5] as StarRating[]).map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() =>
-                      onRateItem(
-                        activeItem.id,
-                        activeItem.rating === star ? 0 : star
-                      )
-                    }
-                    aria-label={`${star} sao`}
-                    className="p-0.5 cursor-pointer"
-                  >
-                    <Star
-                      className={`w-3.5 h-3.5 ${
-                        activeItem.rating >= star
-                          ? 'fill-amber-400 text-amber-400'
-                          : 'text-zinc-600 hover:text-zinc-400'
-                      }`}
-                    />
-                  </button>
-                ))}
-              </div>
-
-              <span className="text-white/15" aria-hidden="true">
-                |
-              </span>
-
               {activeItem.mediaType === 'image' && (
                 <>
                   <button
@@ -1709,12 +1670,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                           <Square className="w-3 h-3" />
                         )}
                       </button>
-                    )}
-
-                    {item.rating > 0 && (
-                      <div className="absolute bottom-1 right-1 px-1 rounded bg-black/80 text-[10px] font-mono text-amber-300 flex items-center gap-0.5 z-10">
-                        <span>★{item.rating}</span>
-                      </div>
                     )}
 
                     {item.status === 'rejected' && (
@@ -1907,14 +1862,6 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                                     </span>
                                   </span>
                                 )}
-                              </div>
-                            )}
-
-                            {/* Bottom-Right Star Rating Badge */}
-                            {item.rating > 0 && (
-                              <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/80 text-[11px] font-mono text-amber-300 flex items-center gap-0.5 z-10">
-                                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                <span>{item.rating}</span>
                               </div>
                             )}
                           </div>

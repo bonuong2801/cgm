@@ -2,8 +2,6 @@ export type MediaType = 'image' | 'video';
 
 export type CullingStatus = 'kept' | 'rejected';
 
-export type StarRating = 0 | 1 | 2 | 3 | 4 | 5;
-
 export type LogoAnchorPosition =
   | 'top-left'
   | 'top-center'
@@ -87,7 +85,6 @@ export interface DriveMediaItem {
   height: number;
   durationMillis?: number;
   status: CullingStatus;
-  rating: StarRating;
   isLocal?: boolean;
   rawFile?: File;
   edit: EditConfig;
@@ -97,13 +94,11 @@ export type MediaTypeFilter = 'all' | 'image' | 'video';
 export type SortByOption =
   | 'name-asc'
   | 'name-desc'
-  | 'rating-desc'
   | 'resolution-desc';
 export type QuickFilterOption =
   | 'all'
   | 'edited'
-  | 'unwatermarked'
-  | 'rated';
+  | 'unwatermarked';
 
 export type RenameMode = 'original' | 'custom';
 export type NumberingRule = 'per-folder' | 'continuous';

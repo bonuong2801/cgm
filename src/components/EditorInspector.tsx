@@ -22,7 +22,6 @@ import {
   Sliders,
   SplitSquareHorizontal,
   Stamp,
-  Star,
   Trash2,
 } from 'lucide-react';
 import type { PlanEntitlements } from '../types/auth.ts';
@@ -34,7 +33,6 @@ import {
   type LogoLayer,
   type LogoPosition,
   type LogoSetPreset,
-  type StarRating,
   cloneLogoLayers,
   createLogoLayer,
 } from '../types/media.ts';
@@ -67,7 +65,6 @@ interface EditorInspectorProps {
     itemId: string,
     updater: (prev: EditConfig) => EditConfig
   ) => void;
-  onRateItem: (itemId: string, rating: StarRating) => void;
   compareOriginal: boolean;
   onCompareOriginalChange: (comparing: boolean) => void;
   onOpenCropModal: (item: DriveMediaItem) => void;
@@ -111,7 +108,6 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
   onChangeLogoScope,
   onBatchUpdateLogos,
   onUpdateEdit,
-  onRateItem,
   compareOriginal,
   onCompareOriginalChange,
   onOpenCropModal,
@@ -1003,38 +999,8 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
           </button>
         </div>
 
-        {/* Star Rating Bar + Before/After Hold Button */}
-        <div className="flex items-center justify-between gap-2">
-          <div
-            className="flex items-center gap-0.5"
-            role="group"
-            aria-label="Chấm sao cho ảnh"
-          >
-            {([1, 2, 3, 4, 5] as StarRating[]).map((star) => (
-              <button
-                key={star}
-                type="button"
-                onClick={() =>
-                  onRateItem(
-                    selectedItem.id,
-                    selectedItem.rating === star ? 0 : star
-                  )
-                }
-                aria-label={`${star} sao`}
-                title={`Chấm ${star} sao (Phím ${star})`}
-                className="p-1 rounded hover:bg-white/5 cursor-pointer"
-              >
-                <Star
-                  className={`w-3.5 h-3.5 ${
-                    selectedItem.rating >= star
-                      ? 'fill-amber-400 text-amber-400'
-                      : 'text-zinc-600'
-                  }`}
-                />
-              </button>
-            ))}
-          </div>
-
+        {/* Before/After Hold Button */}
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onPointerDown={() => onCompareOriginalChange(true)}

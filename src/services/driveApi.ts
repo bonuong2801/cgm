@@ -145,7 +145,6 @@ export async function crawlGoogleDriveFolder(
           return {
             ...normalized,
             status: 'kept',
-            rating: 0,
             edit: {
               ...DEFAULT_EDIT_CONFIG,
               logos:
@@ -244,7 +243,6 @@ export async function crawlGoogleDriveFolder(
                 ? Number(raw.videoMediaMetadata.durationMillis)
                 : undefined,
             status: 'kept',
-            rating: 0,
             edit: {
               ...DEFAULT_EDIT_CONFIG,
               logos: isVideo ? [] : cloneLogoLayers(initialLogos),

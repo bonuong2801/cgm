@@ -1,12 +1,10 @@
 import { useEffect, useRef } from 'react';
-import type { StarRating } from '../types/media.ts';
 
 export interface KeyboardShortcutHandlers {
   onPrevItem: () => void;
   onNextItem: () => void;
   onRejectCurrent: () => void;
   onKeepCurrent: () => void;
-  onRateCurrent: (rating: StarRating) => void;
   onUndoLastReject: () => void;
   onOpenCropModal: () => void;
   onToggleLightbox: () => void;
@@ -21,7 +19,6 @@ export interface KeyboardShortcutHandlers {
  * - Space: Toggle full-screen Lightbox
  * - X / Delete / Backspace: Reject current item & advance
  * - P / U: Mark Kept / Restore current item
- * - 1..5: Toggle 1..5 Star Rating on current item
  * - Hold `\`: Instant Before / After original comparison
  * - Z (or Ctrl/Cmd+Z): Undo last rejection
  * - C: Open Crop modal
@@ -101,17 +98,6 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
       if ((e.key === 'p' || e.key === 'P' || e.key === 'u' || e.key === 'U') && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         h.onKeepCurrent();
-        return;
-      }
-
-      if (
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey &&
-        ['1', '2', '3', '4', '5'].includes(e.key)
-      ) {
-        e.preventDefault();
-        h.onRateCurrent(Number(e.key) as StarRating);
         return;
       }
 

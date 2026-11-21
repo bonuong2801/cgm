@@ -193,7 +193,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       width: 1800,
       height: 1200,
       status: 'kept',
-      rating: 0,
       edit: { logos: [] } as any,
     };
   }, [eligibleItems]);

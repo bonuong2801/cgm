@@ -5,7 +5,6 @@ import type {
   EditConfig,
   LogoLayer,
   LogoSetPreset,
-  StarRating,
 } from '../types/media.ts';
 import { normalizeDriveMediaUrls } from '../utils/mediaMath.ts';
 
@@ -33,7 +32,6 @@ export interface PersistedDriveSession {
     height: number;
     durationMillis?: number;
     status: CullingStatus;
-    rating: StarRating;
     edit: EditConfig;
   }>;
   globalLogos: LogoLayer[];

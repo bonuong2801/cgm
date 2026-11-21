@@ -69,3 +69,44 @@ export function toUserFriendlyError(
 
   return raw;
 }
+
+export function getUserGuideStorageKey(userId?: string | null): string {
+  return `cgm_hide_user_guide_v1:${(userId || 'default').trim() || 'default'}`;
+}
+
+function defaultStorage(): Storage | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when this user ticked "Không hiển thị lại vĩnh viễn" for the login guide. */
+export function readUserGuideHidden(
+  userId?: string | null,
+  storage?: Pick<Storage, 'getItem'> | null
+): boolean {
+  try {
+    const store = storage ?? defaultStorage();
+    return store?.getItem(getUserGuideStorageKey(userId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writeUserGuideHidden(
+  userId: string | null | undefined,
+  hidden: boolean,
+  storage?: Pick<Storage, 'setItem' | 'removeItem'> | null
+): void {
+  try {
+    const store = storage ?? defaultStorage();
+    if (!store) return;
+    const key = getUserGuideStorageKey(userId);
+    if (hidden) store.setItem(key, '1');
+    else store.removeItem(key);
+  } catch {
+    // ignore private-mode / quota errors
+  }
+}

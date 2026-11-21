@@ -24,8 +24,6 @@ interface FolderSidebarProps {
   onSelectMediaType: (filter: MediaTypeFilter) => void;
   statusFilter: CullingStatus;
   onSelectStatusFilter: (status: CullingStatus) => void;
-  gridColumns: number;
-  onChangeGridColumns: (cols: number) => void;
 }
 
 export const FolderSidebar: React.FC<FolderSidebarProps> = ({
@@ -37,8 +35,6 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
   onSelectMediaType,
   statusFilter,
   onSelectStatusFilter,
-  gridColumns,
-  onChangeGridColumns,
 }) => {
   // Single O(N) pass for all folder & global counts instead of repeated O(F * N) scans
   const statsSummary = useMemo(() => {
@@ -290,60 +286,6 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
             </button>
           );
         })}
-      </div>
-
-      {/* Section 3: Grid Density & Studio Shortcuts */}
-      <div className="p-3 border-t border-white/10 bg-[#0B0B0D]/70 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-zinc-400">Số cột chế độ Lưới</span>
-          <div className="flex items-center gap-1 bg-[#09090B] p-0.5 rounded-md border border-white/10">
-            {[2, 3, 4, 5, 6].map((cols) => (
-              <button
-                key={cols}
-                type="button"
-                onClick={() => onChangeGridColumns(cols)}
-                className={`w-6 h-6 text-xs font-mono tabular-nums rounded transition-colors cursor-pointer ${
-                  gridColumns === cols
-                    ? 'bg-amber-500 text-zinc-950 font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-                title={`Hiển thị ${cols} cột`}
-              >
-                {cols}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="text-[11px] text-zinc-400 space-y-1 pt-1 border-t border-white/10">
-          <div className="font-semibold text-zinc-300 mb-1">
-            Phím tắt Studio
-          </div>
-          <div className="flex justify-between">
-            <span>Chuyển ảnh trước / sau</span>
-            <span className="font-mono text-amber-300">← / →</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Phóng to &amp; kéo đặt Logo</span>
-            <span className="font-mono text-emerald-400">Space</span>
-          </div>
-          <div className="flex justify-between">
-            <span>So sánh Ảnh gốc (Giữ phím)</span>
-            <span className="font-mono text-sky-400">\</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Chấm sao nhanh</span>
-            <span className="font-mono text-amber-300">1 – 5</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Giữ (P) / Loại bỏ (X)</span>
-            <span className="font-mono text-rose-400">P / X</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Cắt khung (C) · Hoàn tác (Z)</span>
-            <span className="font-mono text-zinc-300">C / Z</span>
-          </div>
-        </div>
       </div>
     </aside>
   );

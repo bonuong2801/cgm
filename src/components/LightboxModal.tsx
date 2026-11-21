@@ -8,7 +8,6 @@ import {
   Move,
   RotateCcw,
   SplitSquareHorizontal,
-  Star,
   Trash2,
   X,
   ZoomIn,
@@ -16,7 +15,6 @@ import {
 } from 'lucide-react';
 import {
   type DriveMediaItem,
-  type StarRating,
   getActiveLogos,
 } from '../types/media.ts';
 import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
@@ -38,7 +36,6 @@ interface LightboxModalProps {
   onRequestUpgrade: (reason: string) => void;
   compareOriginal: boolean;
   onCompareOriginalChange: (comparing: boolean) => void;
-  onRateItem: (itemId: string, rating: StarRating) => void;
   onMoveLogoLayer: (
     logoId: string,
     customXPercent: number,
@@ -64,7 +61,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   onRequestUpgrade,
   compareOriginal,
   onCompareOriginalChange,
-  onRateItem,
   onMoveLogoLayer,
   onClose,
   onPrev,
@@ -384,25 +380,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               aria-label="Đang tải ảnh"
             />
           )}
-          <div className="hidden lg:flex items-center gap-0.5 ml-2">
-            {([1, 2, 3, 4, 5] as StarRating[]).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => onRateItem(item.id, item.rating === s ? 0 : s)}
-                aria-label={`${s} sao`}
-                className="p-0.5 cursor-pointer"
-              >
-                <Star
-                  className={`w-3.5 h-3.5 ${
-                    item.rating >= s
-                      ? 'fill-amber-400 text-amber-400'
-                      : 'text-zinc-600 hover:text-zinc-400'
-                  }`}
-                />
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Center Zoom Controls for Photos */}

@@ -316,7 +316,6 @@ export async function importFilesFromComputer(
       width: isVideo ? 1920 : 1800,
       height: isVideo ? 1080 : 1200,
       status: 'kept',
-      rating: 0,
       isLocal: true,
       rawFile: file,
       edit: {

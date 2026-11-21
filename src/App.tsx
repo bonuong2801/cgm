@@ -20,7 +20,6 @@ import {
   type MediaTypeFilter,
   type QuickFilterOption,
   type SortByOption,
-  type StarRating,
   cloneLogoLayers,
   isPhotoEdited,
 } from './types/media.ts';
@@ -37,7 +36,11 @@ import {
   saveLogoPresets,
   saveWorkspaceSession,
 } from './services/sessionStore.ts';
-import { toUserFriendlyError } from './utils/userMessages.ts';
+import {
+  readUserGuideHidden,
+  toUserFriendlyError,
+  writeUserGuideHidden,
+} from './utils/userMessages.ts';
 import { collectAdjacentPreloadUrls } from './utils/mediaMath.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { TopBar } from './components/TopBar.tsx';
@@ -53,14 +56,15 @@ import {
 import { LightboxModal } from './components/LightboxModal.tsx';
 import { CropModal } from './components/CropModal.tsx';
 import { ExportModal } from './components/ExportModal.tsx';
+import { UserGuideModal } from './components/UserGuideModal.tsx';
 
 export default function App() {
   const { isConfigured, isLoadingAuth, session } = useAuth();
 
   if (isLoadingAuth) {
     return (
-      <div className="h-screen w-screen bg-zinc-950 text-zinc-300 flex flex-col items-center justify-center gap-3 select-none">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+      <div className="h-screen w-screen bg-[#08080A] text-zinc-300 flex flex-col items-center justify-center gap-3 select-none">
+        <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
         <span className="text-xs text-zinc-400">
           Đang xác thực phiên đăng nhập CGM Studio...
         </span>
@@ -77,6 +81,7 @@ export default function App() {
 
 function StudioWorkspace() {
   const {
+    session,
     profile,
     entitlements,
     refreshProfile,
@@ -109,7 +114,6 @@ function StudioWorkspace() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [quickFilter, setQuickFilter] = useState<QuickFilterOption>('all');
   const [sortBy, setSortBy] = useState<SortByOption>('name-asc');
-  const [gridColumns, setGridColumns] = useState<number>(4);
 
   // Selection, Multi-Check & Multi-Logo Layer Stack
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -126,6 +130,31 @@ function StudioWorkspace() {
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState<boolean>(false);
   const [upgradeReason, setUpgradeReason] = useState<string | null>(null);
+
+  // User Guide Modal (auto-displays after login unless user permanently opted out)
+  const guideUserKey = session?.user?.id || profile?.id || 'default';
+  const [hideGuidePermanently, setHideGuidePermanently] = useState<boolean>(() =>
+    readUserGuideHidden(guideUserKey)
+  );
+  const [isGuideModalOpen, setIsGuideModalOpen] = useState<boolean>(
+    () => !readUserGuideHidden(guideUserKey)
+  );
+
+  useEffect(() => {
+    const hidden = readUserGuideHidden(guideUserKey);
+    setHideGuidePermanently(hidden);
+    if (!hidden) {
+      setIsGuideModalOpen(true);
+    }
+  }, [guideUserKey]);
+
+  const handleToggleHideGuidePermanently = useCallback(
+    (checked: boolean) => {
+      setHideGuidePermanently(checked);
+      writeUserGuideHidden(guideUserKey, checked);
+    },
+    [guideUserKey]
+  );
 
   const handleOpenUpgradeModal = useCallback((reason?: string) => {
     setUpgradeReason(reason || null);
@@ -233,7 +262,6 @@ function StudioWorkspace() {
       }
 
       if (quickFilter !== 'all') {
-        if (quickFilter === 'rated') return item.rating > 0;
         if (item.mediaType !== 'image') return false;
         const flags = isPhotoEdited(item.edit);
         if (quickFilter === 'edited') return flags.hasAnyEdit;
@@ -248,8 +276,6 @@ function StudioWorkspace() {
     const sorted = [...matched];
     if (sortBy === 'name-desc') {
       sorted.sort((a, b) => b.name.localeCompare(a.name, 'vi'));
-    } else if (sortBy === 'rating-desc') {
-      sorted.sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, 'vi'));
     } else if (sortBy === 'resolution-desc') {
       sorted.sort((a, b) => b.width * b.height - a.width * a.height);
     }
@@ -584,12 +610,6 @@ function StudioWorkspace() {
     setSelectedItemId(lastId);
   }, [rejectedHistoryIds]);
 
-  const handleRateItem = useCallback((itemId: string, rating: StarRating) => {
-    setItems((prev) =>
-      prev.map((i) => (i.id === itemId ? { ...i, rating } : i))
-    );
-  }, []);
-
   const handleNavigate = useCallback(
     (direction: -1 | 1) => {
       if (filteredItems.length === 0) return;
@@ -869,13 +889,6 @@ function StudioWorkspace() {
         handleNavigate(1);
       }
     },
-    onRateCurrent: (rating) => {
-      const activeId = lightboxItemId || selectedItemId;
-      const target = activeId ? itemsById.get(activeId) : undefined;
-      if (target) {
-        handleRateItem(target.id, target.rating === rating ? 0 : rating);
-      }
-    },
     onUndoLastReject: handleUndoLastReject,
     onOpenCropModal: () => {
       const activeId = lightboxItemId || selectedItemId;
@@ -885,7 +898,13 @@ function StudioWorkspace() {
       }
     },
     onToggleLightbox: () => {
-      if (cropModalItemId || isExportModalOpen || isUpgradeModalOpen) return;
+      if (
+        cropModalItemId ||
+        isExportModalOpen ||
+        isUpgradeModalOpen ||
+        isGuideModalOpen
+      )
+        return;
       if (lightboxItemId) {
         setLightboxItemId(null);
       } else if (selectedItemId) {
@@ -893,7 +912,9 @@ function StudioWorkspace() {
       }
     },
     onCloseModal: () => {
-      if (isUpgradeModalOpen) {
+      if (isGuideModalOpen) {
+        setIsGuideModalOpen(false);
+      } else if (isUpgradeModalOpen) {
         setIsUpgradeModalOpen(false);
       } else if (cropModalItemId) {
         setCropModalItemId(null);
@@ -908,7 +929,8 @@ function StudioWorkspace() {
       cropModalItemId ||
         lightboxItemId ||
         isExportModalOpen ||
-        isUpgradeModalOpen
+        isUpgradeModalOpen ||
+        isGuideModalOpen
     ),
   });
 
@@ -962,6 +984,7 @@ function StudioWorkspace() {
         profile={profile}
         entitlements={entitlements}
         onOpenUpgradeModal={handleOpenUpgradeModal}
+        onOpenUserGuide={() => setIsGuideModalOpen(true)}
         onSignOut={signOut}
         inputRef={driveInputRef}
         driveUrlInput={driveUrlInput}
@@ -1018,7 +1041,7 @@ function StudioWorkspace() {
       )}
 
       {isLoading && loadingStatusText && (
-        <div className="bg-indigo-500/15 border-b border-indigo-500/30 px-5 py-2 text-xs text-indigo-200 flex items-center justify-center shrink-0">
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-5 py-2 text-xs text-amber-200 flex items-center justify-center shrink-0">
           {loadingStatusText}
         </div>
       )}
@@ -1035,8 +1058,6 @@ function StudioWorkspace() {
             onSelectMediaType={setMediaTypeFilter}
             statusFilter={statusFilter}
             onSelectStatusFilter={setStatusFilter}
-            gridColumns={gridColumns}
-            onChangeGridColumns={setGridColumns}
           />
         )}
 
@@ -1055,7 +1076,6 @@ function StudioWorkspace() {
           onSelectItem={(item) => setSelectedItemId(item.id)}
           onPrevItem={() => handleNavigate(-1)}
           onNextItem={() => handleNavigate(1)}
-          onRateItem={handleRateItem}
           onToggleCheckItem={handleToggleCheckItem}
           onSelectAllVisiblePhotos={handleSelectAllVisiblePhotos}
           onClearCheckedItems={handleClearCheckedItems}
@@ -1069,7 +1089,7 @@ function StudioWorkspace() {
           canFreeDragLogo={entitlements.canFreeDragLogo}
           onRequestUpgrade={handleOpenUpgradeModal}
           onMoveLogoLayer={handleMoveLightboxLogoLayer}
-          gridColumns={gridColumns}
+          gridColumns={4}
           onFocusDriveInput={() => driveInputRef.current?.focus()}
           onImportLocalFiles={handleImportLocalFiles}
           hasAnyLoadedItems={items.length > 0}
@@ -1091,7 +1111,6 @@ function StudioWorkspace() {
             onChangeLogoScope={setLogoScope}
             onBatchUpdateLogos={handleBatchUpdateLogos}
             onUpdateEdit={handleUpdateEdit}
-            onRateItem={handleRateItem}
             compareOriginal={compareOriginal}
             onCompareOriginalChange={setCompareOriginal}
             onOpenCropModal={(item) => setCropModalItemId(item.id)}
@@ -1111,7 +1130,6 @@ function StudioWorkspace() {
         onRequestUpgrade={handleOpenUpgradeModal}
         compareOriginal={compareOriginal}
         onCompareOriginalChange={setCompareOriginal}
-        onRateItem={handleRateItem}
         onMoveLogoLayer={handleMoveLightboxLogoLayer}
         onClose={() => setLightboxItemId(null)}
         onPrev={() => handleNavigate(-1)}
@@ -1155,6 +1173,14 @@ function StudioWorkspace() {
           }
           showToast(msg);
         }}
+      />
+
+      {/* User Guide Modal (Automatic on login unless permanently dismissed + Taskbar button) */}
+      <UserGuideModal
+        isOpen={isGuideModalOpen}
+        hidePermanently={hideGuidePermanently}
+        onToggleHidePermanently={handleToggleHideGuidePermanently}
+        onClose={() => setIsGuideModalOpen(false)}
       />
     </div>
   );

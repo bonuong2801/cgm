@@ -4,6 +4,7 @@ import {
   Download,
   FolderSearch,
   FolderUp,
+  HelpCircle,
   ImagePlus,
   Loader2,
   LogOut,
@@ -37,6 +38,7 @@ interface TopBarProps {
   onToggleLeftSidebar: () => void;
   isRightInspectorOpen: boolean;
   onToggleRightInspector: () => void;
+  onOpenUserGuide: () => void;
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
@@ -60,6 +62,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleLeftSidebar,
   isRightInspectorOpen,
   onToggleRightInspector,
+  onOpenUserGuide,
   inputRef,
 }) => {
   const [inputFocused, setInputFocused] = useState(false);
@@ -204,8 +207,22 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       </div>
 
-      {/* Zone 3: Clear + Undo + Export + Account Tier Badge */}
+      {/* Zone 3: Guide + Clear + Undo + Export + Account Tier Badge */}
       <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          onClick={onOpenUserGuide}
+          aria-label="Hướng dẫn sử dụng"
+          className="px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:text-amber-300 bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+          title="Xem hướng dẫn sử dụng CGM Studio"
+        >
+          <HelpCircle
+            className="w-3.5 h-3.5 text-amber-400 shrink-0"
+            aria-hidden="true"
+          />
+          <span className="hidden lg:inline">Hướng dẫn</span>
+        </button>
+
         {totalCount > 0 && (
           <button
             type="button"

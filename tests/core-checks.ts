@@ -32,7 +32,12 @@ import {
   sanitizeFileToken,
   sanitizeFolderNameForDisk,
 } from '../src/utils/mediaMath.ts';
-import { toUserFriendlyError } from '../src/utils/userMessages.ts';
+import {
+  getUserGuideStorageKey,
+  readUserGuideHidden,
+  toUserFriendlyError,
+  writeUserGuideHidden,
+} from '../src/utils/userMessages.ts';
 import { resolveRelativeFolderPath } from '../src/services/localFileLoader.ts';
 import {
   buildExportPlan,
@@ -162,7 +167,6 @@ async function runCoreChecks() {
     width: 4000,
     height: 3000,
     status: 'kept',
-    rating: 5,
     edit: { ...DEFAULT_EDIT_CONFIG, logos: [] },
   };
   const baseExportOpts: ExportOptions = {
@@ -624,6 +628,32 @@ async function runCoreChecks() {
       .zoom,
     5
   );
+
+  // 12. User Guide Per-User Permanent Hide Preference Storage
+  const memStore = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => memStore.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      memStore.set(k, v);
+    },
+    removeItem: (k: string) => {
+      memStore.delete(k);
+    },
+  };
+  assert.equal(
+    getUserGuideStorageKey('user_abc'),
+    'cgm_hide_user_guide_v1:user_abc'
+  );
+  assert.equal(
+    getUserGuideStorageKey('  '),
+    'cgm_hide_user_guide_v1:default'
+  );
+  assert.equal(readUserGuideHidden('user_abc', mockStorage), false);
+  writeUserGuideHidden('user_abc', true, mockStorage);
+  assert.equal(readUserGuideHidden('user_abc', mockStorage), true);
+  assert.equal(readUserGuideHidden('user_other', mockStorage), false);
+  writeUserGuideHidden('user_abc', false, mockStorage);
+  assert.equal(readUserGuideHidden('user_abc', mockStorage), false);
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }
