@@ -79,6 +79,7 @@ export function formatVideoDuration(durationMillis?: number): string {
 
 // ponytail: fixed 16-image decoded bitmap LRU; tune if preview memory budget changes
 const MAX_PRELOADED_IMAGES = 16;
+const MAX_READY_URLS = 400;
 const preloadedImageCache = new Map<string, HTMLImageElement>();
 const preloadedReadyUrls = new Set<string>();
 
@@ -88,7 +89,15 @@ export function isPreviewImagePreloaded(url: string): boolean {
 
 export function markPreviewImageReady(url: string): void {
   if (!url) return;
+  if (preloadedReadyUrls.has(url)) {
+    preloadedReadyUrls.delete(url);
+  }
   preloadedReadyUrls.add(url);
+  while (preloadedReadyUrls.size > MAX_READY_URLS) {
+    const oldestUrl = preloadedReadyUrls.values().next().value;
+    if (!oldestUrl) break;
+    preloadedReadyUrls.delete(oldestUrl);
+  }
 }
 
 export function preloadPreviewImages(urls: string[]): void {
@@ -108,7 +117,7 @@ export function preloadPreviewImages(urls: string[]): void {
     img.referrerPolicy = 'no-referrer';
     img.decoding = 'async';
     img.onload = () => {
-      preloadedReadyUrls.add(url);
+      markPreviewImageReady(url);
       if (typeof img.decode === 'function') {
         img.decode().catch(() => {});
       }
@@ -509,7 +518,7 @@ export const LiveEditedPhotoPreview: React.FC<{
             referrerPolicy="no-referrer"
             loading={useHighRes ? 'eager' : 'lazy'}
             fetchPriority={useHighRes ? 'high' : undefined}
-            decoding="async"
+            decoding={isCurrentSrcReady ? 'sync' : 'async'}
             onLoad={handleImageLoaded}
             onError={handleImageError}
             className="max-w-none select-none pointer-events-none block"

@@ -23,6 +23,7 @@ import {
   computeFrameGeometry,
   computeSmartLogoPlacement,
   computeWarmthTint,
+  getInstantPaintState,
   normalizeDriveMediaUrls,
   resolveDetectedDimensions,
   resolveOrientedMediaDimensions,
@@ -524,6 +525,70 @@ async function runCoreChecks() {
     'v2',
     'g2',
   ]);
+
+  // Double-buffered Lightbox swap readiness checks
+  const cachedSet = new Set<string>(['g_cached', 'v_cached']);
+  const isUrlReady = (url: string) => cachedSet.has(url);
+  assert.deepEqual(
+    getInstantPaintState(
+      {
+        isLocal: true,
+        mediaType: 'image',
+        gridThumbUrl: 'blob:1',
+        previewUrl: 'blob:1',
+      },
+      isUrlReady
+    ),
+    { canSwapImmediately: true, highResReady: true }
+  );
+  assert.deepEqual(
+    getInstantPaintState(
+      {
+        isLocal: false,
+        mediaType: 'video',
+        gridThumbUrl: 'g_uncached',
+        previewUrl: 'v_uncached',
+      },
+      isUrlReady
+    ),
+    { canSwapImmediately: true, highResReady: true }
+  );
+  assert.deepEqual(
+    getInstantPaintState(
+      {
+        isLocal: false,
+        mediaType: 'image',
+        gridThumbUrl: 'g_uncached',
+        previewUrl: 'v_cached',
+      },
+      isUrlReady
+    ),
+    { canSwapImmediately: true, highResReady: true }
+  );
+  assert.deepEqual(
+    getInstantPaintState(
+      {
+        isLocal: false,
+        mediaType: 'image',
+        gridThumbUrl: 'g_cached',
+        previewUrl: 'v_uncached',
+      },
+      isUrlReady
+    ),
+    { canSwapImmediately: true, highResReady: false }
+  );
+  assert.deepEqual(
+    getInstantPaintState(
+      {
+        isLocal: false,
+        mediaType: 'image',
+        gridThumbUrl: 'g_uncached',
+        previewUrl: 'v_uncached',
+      },
+      isUrlReady
+    ),
+    { canSwapImmediately: false, highResReady: false }
+  );
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }

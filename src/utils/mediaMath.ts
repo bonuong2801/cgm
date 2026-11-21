@@ -445,3 +445,27 @@ export function collectAdjacentPreloadUrls(
 
   return dedupeTruthyUrls(urls);
 }
+
+/**
+ * Determines whether switching to `item` can paint immediately from a ready
+ * local blob, video frame, or preloaded image cache without flashing black.
+ */
+export function getInstantPaintState(
+  item: {
+    isLocal?: boolean;
+    mediaType: 'image' | 'video';
+    gridThumbUrl: string;
+    previewUrl: string;
+  },
+  isUrlReady: (url: string) => boolean
+): { canSwapImmediately: boolean; highResReady: boolean } {
+  if (item.mediaType === 'video' || item.isLocal) {
+    return { canSwapImmediately: true, highResReady: true };
+  }
+  const highResReady = isUrlReady(item.previewUrl);
+  const thumbReady = isUrlReady(item.gridThumbUrl);
+  return {
+    canSwapImmediately: highResReady || thumbReady,
+    highResReady,
+  };
+}

@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Crop,
+  Loader2,
   Maximize,
   Move,
   RotateCcw,
@@ -19,9 +20,14 @@ import {
   getActiveLogos,
 } from '../types/media.ts';
 import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
-import { computeFrameGeometry } from '../utils/mediaMath.ts';
+import {
+  computeFrameGeometry,
+  getInstantPaintState,
+} from '../utils/mediaMath.ts';
 import {
   LiveEditedPhotoPreview,
+  isPreviewImagePreloaded,
+  markPreviewImageReady,
   preloadPreviewImages,
 } from './VirtualMediaGrid.tsx';
 
@@ -75,6 +81,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const [videoFallbackIframe, setVideoFallbackIframe] =
     useState<boolean>(false);
   const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null);
+  const [committedItem, setCommittedItem] = useState<DriveMediaItem | null>(
+    item
+  );
+  const [isScrubbing, setIsScrubbing] = useState<boolean>(false);
 
   const dragStartRef = useRef<{
     clientX: number;
@@ -83,11 +93,22 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     panY: number;
   } | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const lastNavAtRef = useRef<number>(0);
+  const scrubSettleTimerRef = useRef<number | null>(null);
 
   const activeItemId = item?.id || null;
   const effectiveZoom = item && zoomItemId === item.id ? zoom : 1;
   const effectivePan =
     item && zoomItemId === item.id ? pan : { x: 0, y: 0 };
+
+  useEffect(() => {
+    return () => {
+      if (scrubSettleTimerRef.current !== null) {
+        window.clearTimeout(scrubSettleTimerRef.current);
+        scrubSettleTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setZoom(1);
@@ -98,10 +119,115 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   }, [item?.id]);
 
   useEffect(() => {
-    if (preloadUrls.length > 0) {
-      preloadPreviewImages(preloadUrls);
+    if (preloadUrls.length === 0) return;
+    const timer = window.setTimeout(
+      () => {
+        preloadPreviewImages(preloadUrls);
+      },
+      isScrubbing ? 200 : 120
+    );
+    return () => window.clearTimeout(timer);
+  }, [preloadUrls, isScrubbing]);
+
+  useEffect(() => {
+    if (!item) {
+      if (scrubSettleTimerRef.current !== null) {
+        window.clearTimeout(scrubSettleTimerRef.current);
+        scrubSettleTimerRef.current = null;
+      }
+      lastNavAtRef.current = 0;
+      setIsScrubbing(false);
+      setCommittedItem(null);
+      return;
     }
-  }, [preloadUrls]);
+
+    const now = Date.now();
+    const rapid =
+      lastNavAtRef.current > 0 && now - lastNavAtRef.current < 160;
+    lastNavAtRef.current = now;
+
+    if (rapid) {
+      setIsScrubbing(true);
+      if (scrubSettleTimerRef.current !== null) {
+        window.clearTimeout(scrubSettleTimerRef.current);
+      }
+      scrubSettleTimerRef.current = window.setTimeout(() => {
+        scrubSettleTimerRef.current = null;
+        setIsScrubbing(false);
+      }, 140);
+    }
+
+    const { canSwapImmediately } = getInstantPaintState(
+      item,
+      isPreviewImagePreloaded
+    );
+    if (canSwapImmediately) {
+      setCommittedItem(item);
+      return;
+    }
+
+    const urlsToLoad = Array.from(
+      new Set(
+        [item.gridThumbUrl, ...(rapid ? [] : [item.previewUrl])].filter(Boolean)
+      )
+    );
+    if (urlsToLoad.length === 0) {
+      setCommittedItem(item);
+      return;
+    }
+
+    let cancelled = false;
+    let settled = false;
+    let errorCount = 0;
+    let loaders: HTMLImageElement[] = [];
+    let safetyTimer: number | undefined;
+
+    const commit = () => {
+      if (cancelled || settled) return;
+      settled = true;
+      if (safetyTimer !== undefined) {
+        window.clearTimeout(safetyTimer);
+        safetyTimer = undefined;
+      }
+      setCommittedItem(item);
+    };
+
+    const delayTimer = window.setTimeout(
+      () => {
+        if (cancelled) return;
+        safetyTimer = window.setTimeout(commit, 2500);
+        loaders = urlsToLoad.map((url) => {
+          const loader = new Image();
+          loader.referrerPolicy = 'no-referrer';
+          loader.onload = () => {
+            markPreviewImageReady(url);
+            commit();
+          };
+          loader.onerror = () => {
+            errorCount += 1;
+            if (errorCount >= urlsToLoad.length) {
+              commit();
+            }
+          };
+          loader.src = url;
+          return loader;
+        });
+      },
+      rapid ? 95 : 0
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(delayTimer);
+      if (safetyTimer !== undefined) {
+        window.clearTimeout(safetyTimer);
+      }
+      for (const loader of loaders) {
+        loader.onload = null;
+        loader.onerror = null;
+      }
+    };
+  }, [item?.id]);
 
   const handleSetZoom = useCallback(
     (nextZoomVal: number) => {
@@ -172,14 +298,23 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   if (!item) return null;
 
   const isVideo = item.mediaType === 'video';
+  const instantState = getInstantPaintState(item, isPreviewImagePreloaded);
+  const stageItem =
+    !committedItem ||
+    committedItem.id === item.id ||
+    instantState.canSwapImmediately
+      ? item
+      : committedItem;
+  const isStagePending = stageItem.id !== item.id;
+  const stageIsVideo = stageItem.mediaType === 'video';
   const canStreamNativeVideo =
-    item.downloadUrl.startsWith('blob:') ||
-    item.downloadUrl.startsWith('/api/drive/stream');
-  const driveEmbedUrl = `https://drive.google.com/file/d/${item.id}/preview`;
+    stageItem.downloadUrl.startsWith('blob:') ||
+    stageItem.downloadUrl.startsWith('/api/drive/stream');
+  const driveEmbedUrl = `https://drive.google.com/file/d/${stageItem.id}/preview`;
   const activeLogoCount = isVideo ? 0 : getActiveLogos(item.edit).length;
-  const previewGeom = isVideo
+  const stagePreviewGeom = stageIsVideo
     ? null
-    : computeFrameGeometry(item.width, item.height, item.edit, 0);
+    : computeFrameGeometry(stageItem.width, stageItem.height, stageItem.edit, 0);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isVideo || e.button !== 0) return;
@@ -243,6 +378,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           <span className="text-sm font-semibold text-zinc-100 truncate">
             {item.name}
           </span>
+          {isStagePending && (
+            <Loader2
+              className="w-3.5 h-3.5 text-zinc-400 animate-spin shrink-0"
+              aria-label="Đang tải ảnh"
+            />
+          )}
           <div className="hidden lg:flex items-center gap-0.5 ml-2">
             {([1, 2, 3, 4, 5] as StarRating[]).map((s) => (
               <button
@@ -425,11 +566,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={handleDoubleClickPhoto}
         >
-          {isVideo ? (
+          {stageIsVideo ? (
             canStreamNativeVideo && !videoFallbackIframe ? (
               <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl flex items-center justify-center">
                 <video
-                  src={attachAuthToStreamUrl(item.downloadUrl)}
+                  src={attachAuthToStreamUrl(stageItem.downloadUrl)}
                   controls
                   autoPlay
                   onError={() => setVideoFallbackIframe(true)}
@@ -440,7 +581,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               <div className="w-full max-w-4xl aspect-video bg-black border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
                 <iframe
                   src={driveEmbedUrl}
-                  title={item.name}
+                  title={stageItem.name}
                   className="w-full h-full border-0"
                   allow="autoplay; fullscreen"
                 />
@@ -465,11 +606,15 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               }}
             >
               <LiveEditedPhotoPreview
-                key={item.id}
-                item={item}
-                useHighRes={true}
-                preferOriginal={!isVideo && effectiveZoom > 1.05}
-                showOriginal={compareOriginal}
+                key={stageItem.id}
+                item={stageItem}
+                useHighRes={
+                  !isScrubbing || isPreviewImagePreloaded(stageItem.previewUrl)
+                }
+                preferOriginal={
+                  !stageIsVideo && !isStagePending && effectiveZoom > 1.05
+                }
+                showOriginal={compareOriginal && !isStagePending}
                 activeLogoId={selectedLogoId}
                 onSelectLogoLayer={setSelectedLogoId}
                 onInteractiveMoveLogo={
@@ -486,7 +631,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                     : undefined
                 }
                 style={{
-                  width: `min(82vw, calc(78vh * ${previewGeom?.cropW || 1600} / ${Math.max(1, previewGeom?.cropH || 1067)}))`,
+                  width: `min(82vw, calc(78vh * ${stagePreviewGeom?.cropW || 1600} / ${Math.max(1, stagePreviewGeom?.cropH || 1067)}))`,
                 }}
                 className="rounded-lg shadow-2xl border border-zinc-800"
               />

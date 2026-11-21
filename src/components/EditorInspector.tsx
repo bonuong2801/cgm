@@ -389,7 +389,6 @@ export const EditorInspector: React.FC<EditorInspectorProps> = ({
           <div className="space-y-1">
             <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-1.5 flex flex-col items-center">
               <LiveEditedPhotoPreview
-                key={selectedItem.id}
                 item={selectedItem}
                 useHighRes={false}
                 showOriginal={compareOriginal}
