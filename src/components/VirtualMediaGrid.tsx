@@ -37,6 +37,7 @@ import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 import {
   buildCssFilterString,
   buildImageFallbackSources,
+  computeCursorZoomState,
   computeFrameGeometry,
   computeSmartLogoPlacement,
   computeWarmthTint,
@@ -726,8 +727,73 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
   const [committedLoupeItem, setCommittedLoupeItem] =
     useState<DriveMediaItem | null>(activeItem);
   const [isLoupeScrubbing, setIsLoupeScrubbing] = useState<boolean>(false);
+  const [loupeTransform, setLoupeTransform] = useState<{
+    itemId: string | null;
+    zoom: number;
+    pan: { x: number; y: number };
+  }>({ itemId: null, zoom: 1, pan: { x: 0, y: 0 } });
+  const [isLoupePanning, setIsLoupePanning] = useState<boolean>(false);
+  const loupePanStartRef = useRef<{
+    clientX: number;
+    clientY: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
   const lastLoupeNavAtRef = useRef<number>(0);
   const loupeScrubTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setLoupeTransform({ itemId: null, zoom: 1, pan: { x: 0, y: 0 } });
+    setIsLoupePanning(false);
+    loupePanStartRef.current = null;
+  }, [activeItem?.id, viewMode]);
+
+  useEffect(() => {
+    const el = loupeViewportRef.current;
+    if (
+      !el ||
+      viewMode !== 'loupe' ||
+      !hasAnyLoadedItems ||
+      items.length === 0 ||
+      !activeItem ||
+      activeItem.mediaType !== 'image'
+    ) {
+      return;
+    }
+
+    const activeId = activeItem.id;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cursorOffset = {
+        x: e.clientX - (rect.left + rect.width / 2),
+        y: e.clientY - (rect.top + rect.height / 2),
+      };
+      setLoupeTransform((prev) => {
+        const baseZoom = prev.itemId === activeId ? prev.zoom : 1;
+        const basePan =
+          prev.itemId === activeId ? prev.pan : { x: 0, y: 0 };
+        const next = computeCursorZoomState(
+          baseZoom,
+          basePan,
+          e.deltaY,
+          cursorOffset,
+          1,
+          5
+        );
+        return { itemId: activeId, zoom: next.zoom, pan: next.pan };
+      });
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [
+    viewMode,
+    hasAnyLoadedItems,
+    items.length > 0,
+    activeItem?.id,
+    activeItem?.mediaType,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1066,6 +1132,89 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
       )
     : { width: 640, height: 420 };
 
+  const effectiveLoupeZoom =
+    activeItem && loupeTransform.itemId === activeItem.id
+      ? loupeTransform.zoom
+      : 1;
+  const effectiveLoupePan =
+    activeItem && loupeTransform.itemId === activeItem.id
+      ? loupeTransform.pan
+      : { x: 0, y: 0 };
+
+  const handleResetLoupeZoom = () => {
+    setLoupeTransform({ itemId: null, zoom: 1, pan: { x: 0, y: 0 } });
+    setIsLoupePanning(false);
+    loupePanStartRef.current = null;
+  };
+
+  const handleLoupeMouseDown = (e: React.MouseEvent) => {
+    if (!activeItem || activeItem.mediaType !== 'image' || e.button !== 0) {
+      return;
+    }
+    if (effectiveLoupeZoom <= 1) return;
+    e.preventDefault();
+    setIsLoupePanning(true);
+    loupePanStartRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      panX: effectiveLoupePan.x,
+      panY: effectiveLoupePan.y,
+    };
+  };
+
+  const handleLoupeMouseMove = (e: React.MouseEvent) => {
+    if (!isLoupePanning || !loupePanStartRef.current || !activeItem) return;
+    const dx = e.clientX - loupePanStartRef.current.clientX;
+    const dy = e.clientY - loupePanStartRef.current.clientY;
+    const basePan = loupePanStartRef.current;
+    setLoupeTransform((prev) => ({
+      itemId: activeItem.id,
+      zoom: prev.itemId === activeItem.id ? prev.zoom : effectiveLoupeZoom,
+      pan: {
+        x: basePan.panX + dx,
+        y: basePan.panY + dy,
+      },
+    }));
+  };
+
+  const handleLoupeMouseUp = () => {
+    setIsLoupePanning(false);
+    loupePanStartRef.current = null;
+  };
+
+  const handleLoupeDoubleClick = (e: React.MouseEvent) => {
+    if (!activeItem) return;
+    if (activeItem.mediaType === 'video') {
+      onOpenLightbox(activeItem);
+      return;
+    }
+    if (effectiveLoupeZoom > 1.05) {
+      handleResetLoupeZoom();
+      return;
+    }
+    const el = loupeViewportRef.current;
+    const targetZoom = 2.5;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const offsetX = e.clientX - (rect.left + rect.width / 2);
+      const offsetY = e.clientY - (rect.top + rect.height / 2);
+      setLoupeTransform({
+        itemId: activeItem.id,
+        zoom: targetZoom,
+        pan: {
+          x: Number((offsetX * (1 - targetZoom)).toFixed(1)),
+          y: Number((offsetY * (1 - targetZoom)).toFixed(1)),
+        },
+      });
+    } else {
+      setLoupeTransform({
+        itemId: activeItem.id,
+        zoom: targetZoom,
+        pan: { x: 0, y: 0 },
+      });
+    }
+  };
+
   return (
     <div
       onDragOver={(e) => {
@@ -1233,14 +1382,20 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
         </main>
       ) : viewMode === 'loupe' && activeItem && loupeStageItem ? (
         <main className="flex-1 bg-[#08080A] flex flex-col min-h-0 overflow-hidden">
-          {/* Center Large Loupe Stage */}
+          {/* Center Large Loupe Stage (Scroll wheel to zoom, drag to pan, double-click 1x/2.5x) */}
           <div
             ref={loupeViewportRef}
-            onDoubleClick={() => onOpenLightbox(activeItem)}
+            onMouseDown={handleLoupeMouseDown}
+            onMouseMove={handleLoupeMouseMove}
+            onMouseUp={handleLoupeMouseUp}
+            onMouseLeave={handleLoupeMouseUp}
+            onDoubleClick={handleLoupeDoubleClick}
             className="flex-1 relative flex items-center justify-center p-4 min-h-0 overflow-hidden"
           >
             <button
               type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
               onClick={onPrevItem}
               aria-label="Ảnh trước"
               className="absolute left-3.5 z-20 w-9 h-9 rounded-full bg-[#16161B]/90 hover:bg-zinc-800 border border-white/15 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
@@ -1264,7 +1419,23 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="relative flex items-center justify-center">
+              <div
+                className="relative flex items-center justify-center"
+                style={{
+                  transform: `translate3d(${effectiveLoupePan.x}px, ${effectiveLoupePan.y}px, 0) scale(${effectiveLoupeZoom})`,
+                  transformOrigin: 'center center',
+                  transition:
+                    isLoupePanning || loupeTransform.itemId !== activeItem.id
+                      ? 'none'
+                      : 'transform 90ms ease-out',
+                  cursor:
+                    effectiveLoupeZoom > 1
+                      ? isLoupePanning
+                        ? 'grabbing'
+                        : 'grab'
+                      : 'default',
+                }}
+              >
                 <LiveEditedPhotoPreview
                   key={loupeStageItem.id}
                   item={loupeStageItem}
@@ -1272,11 +1443,12 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                     !isLoupeScrubbing ||
                     isPreviewImagePreloaded(loupeStageItem.previewUrl)
                   }
+                  preferOriginal={!isLoupePending && effectiveLoupeZoom > 1.05}
                   showOriginal={compareOriginal && !isLoupePending}
                   activeLogoId={selectedLogoId}
                   onSelectLogoLayer={setSelectedLogoId}
                   onInteractiveMoveLogo={
-                    !isLoupePending
+                    !isLoupePending && effectiveLoupeZoom === 1
                       ? (logoId, xPct, yPct) => {
                           if (!canFreeDragLogo) {
                             onRequestUpgrade(
@@ -1307,6 +1479,8 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
 
             <button
               type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
               onClick={onNextItem}
               aria-label="Ảnh tiếp theo"
               className="absolute right-3.5 z-20 w-9 h-9 rounded-full bg-[#16161B]/90 hover:bg-zinc-800 border border-white/15 text-zinc-200 flex items-center justify-center shadow-lg cursor-pointer transition-transform active:scale-95"
@@ -1417,15 +1591,17 @@ export const VirtualMediaGrid: React.FC<VirtualMediaGridProps> = ({
                 </>
               )}
 
-              <button
-                type="button"
-                onClick={() => onOpenLightbox(activeItem)}
-                className="px-2 py-0.5 rounded-full bg-[#09090B] hover:bg-zinc-800 border border-white/10 text-zinc-200 flex items-center gap-1 cursor-pointer"
-                title="Phóng to toàn màn hình tới 500% (Phím Space)"
-              >
-                <Maximize2 className="w-3 h-3 text-amber-400" />
-                <span>Zoom</span>
-              </button>
+              {activeItem.mediaType === 'image' && effectiveLoupeZoom > 1.01 && (
+                <button
+                  type="button"
+                  onClick={handleResetLoupeZoom}
+                  title="Bấm để đưa về 100% (hoặc nhấp đúp lên ảnh)"
+                  className="px-2 py-0.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-mono tabular-nums flex items-center gap-1 cursor-pointer"
+                >
+                  <span>{Math.round(effectiveLoupeZoom * 100)}%</span>
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+              )}
 
               <button
                 type="button"

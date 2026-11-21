@@ -497,3 +497,46 @@ export function fitAspectRatioInBox(
     height: Math.max(1, Math.round(safeBoxW / ratio)),
   };
 }
+
+/**
+ * Computes anchored cursor zoom + pan translation when scrolling over the Loupe canvas.
+ */
+export function computeCursorZoomState(
+  prevZoom: number,
+  prevPan: { x: number; y: number },
+  deltaY: number,
+  cursorOffsetFromCenter: { x: number; y: number },
+  minZoom = 1,
+  maxZoom = 5
+): { zoom: number; pan: { x: number; y: number } } {
+  const clampedDeltaY = Math.max(-250, Math.min(250, deltaY));
+  const safePrev = Math.max(minZoom, prevZoom);
+  const rawNext = safePrev + -clampedDeltaY * 0.0018 * safePrev;
+  const clamped = Math.max(
+    minZoom,
+    Math.min(maxZoom, Number(rawNext.toFixed(2)))
+  );
+
+  if (clamped <= minZoom + 0.01) {
+    return { zoom: minZoom, pan: { x: 0, y: 0 } };
+  }
+
+  const ratio = clamped / safePrev;
+  return {
+    zoom: clamped,
+    pan: {
+      x: Number(
+        (
+          cursorOffsetFromCenter.x -
+          (cursorOffsetFromCenter.x - prevPan.x) * ratio
+        ).toFixed(1)
+      ),
+      y: Number(
+        (
+          cursorOffsetFromCenter.y -
+          (cursorOffsetFromCenter.y - prevPan.y) * ratio
+        ).toFixed(1)
+      ),
+    },
+  };
+}

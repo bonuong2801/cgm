@@ -20,6 +20,7 @@ import {
   buildImageFallbackSources,
   buildStableDriveThumbnailUrls,
   collectAdjacentPreloadUrls,
+  computeCursorZoomState,
   computeFrameGeometry,
   computeSmartLogoPlacement,
   computeWarmthTint,
@@ -608,6 +609,21 @@ async function runCoreChecks() {
     width: 1,
     height: 1,
   });
+
+  // Anchored cursor zoom state math on Loupe canvas
+  assert.deepEqual(
+    computeCursorZoomState(1, { x: 0, y: 0 }, -200, { x: 100, y: -50 }, 1, 5),
+    { zoom: 1.36, pan: { x: -36, y: 18 } }
+  );
+  assert.deepEqual(
+    computeCursorZoomState(1.05, { x: 24, y: -12 }, 200, { x: 0, y: 0 }, 1, 5),
+    { zoom: 1, pan: { x: 0, y: 0 } }
+  );
+  assert.equal(
+    computeCursorZoomState(4.9, { x: 0, y: 0 }, -500, { x: 0, y: 0 }, 1, 5)
+      .zoom,
+    5
+  );
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }
