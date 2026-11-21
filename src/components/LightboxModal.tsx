@@ -20,10 +20,14 @@ import {
 } from '../types/media.ts';
 import { attachAuthToStreamUrl } from '../lib/supabaseClient.ts';
 import { computeFrameGeometry } from '../utils/mediaMath.ts';
-import { LiveEditedPhotoPreview } from './VirtualMediaGrid.tsx';
+import {
+  LiveEditedPhotoPreview,
+  preloadPreviewImages,
+} from './VirtualMediaGrid.tsx';
 
 interface LightboxModalProps {
   item: DriveMediaItem | null;
+  preloadUrls?: string[];
   canFreeDragLogo: boolean;
   onRequestUpgrade: (reason: string) => void;
   compareOriginal: boolean;
@@ -49,6 +53,7 @@ const ZOOM_STEP = 0.35;
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({
   item,
+  preloadUrls = [],
   canFreeDragLogo,
   onRequestUpgrade,
   compareOriginal,
@@ -65,6 +70,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 }) => {
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [zoomItemId, setZoomItemId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [videoFallbackIframe, setVideoFallbackIframe] =
     useState<boolean>(false);
@@ -78,27 +84,44 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   } | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
+  const activeItemId = item?.id || null;
+  const effectiveZoom = item && zoomItemId === item.id ? zoom : 1;
+  const effectivePan =
+    item && zoomItemId === item.id ? pan : { x: 0, y: 0 };
+
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setZoomItemId(null);
     setIsDragging(false);
     setVideoFallbackIframe(false);
   }, [item?.id]);
 
-  const handleSetZoom = useCallback((nextZoomVal: number) => {
-    const clamped = Math.max(
-      MIN_ZOOM,
-      Math.min(MAX_ZOOM, Number(nextZoomVal.toFixed(2)))
-    );
-    setZoom(clamped);
-    if (clamped <= 1) {
-      setPan({ x: 0, y: 0 });
+  useEffect(() => {
+    if (preloadUrls.length > 0) {
+      preloadPreviewImages(preloadUrls);
     }
-  }, []);
+  }, [preloadUrls]);
+
+  const handleSetZoom = useCallback(
+    (nextZoomVal: number) => {
+      const clamped = Math.max(
+        MIN_ZOOM,
+        Math.min(MAX_ZOOM, Number(nextZoomVal.toFixed(2)))
+      );
+      setZoom(clamped);
+      setZoomItemId(activeItemId);
+      if (clamped <= 1) {
+        setPan({ x: 0, y: 0 });
+      }
+    },
+    [activeItemId]
+  );
 
   const handleResetZoom = useCallback(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setZoomItemId(null);
   }, []);
 
   useEffect(() => {
@@ -107,10 +130,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === '+' || e.key === '=') {
         e.preventDefault();
-        handleSetZoom(zoom + ZOOM_STEP);
+        handleSetZoom(effectiveZoom + ZOOM_STEP);
       } else if (e.key === '-' || e.key === '_') {
         e.preventDefault();
-        handleSetZoom(zoom - ZOOM_STEP);
+        handleSetZoom(effectiveZoom - ZOOM_STEP);
       } else if (e.key === '0') {
         e.preventDefault();
         handleResetZoom();
@@ -119,15 +142,17 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [item, zoom, handleSetZoom, handleResetZoom]);
+  }, [item, effectiveZoom, handleSetZoom, handleResetZoom]);
 
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || !item || item.mediaType === 'video') return;
+    const itemId = item.id;
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       const delta = -e.deltaY * 0.0018;
+      setZoomItemId(itemId);
       setZoom((prevZoom) => {
         const nextZoom = Math.max(
           MIN_ZOOM,
@@ -158,14 +183,15 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isVideo || e.button !== 0) return;
-    if (zoom <= 1) return;
+    if (effectiveZoom <= 1) return;
     e.preventDefault();
+    setZoomItemId(item.id);
     setIsDragging(true);
     dragStartRef.current = {
       clientX: e.clientX,
       clientY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
+      panX: effectivePan.x,
+      panY: effectivePan.y,
     };
   };
 
@@ -187,7 +213,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const handleDoubleClickPhoto = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isVideo) return;
-    if (zoom > 1.05) {
+    if (effectiveZoom > 1.05) {
       handleResetZoom();
     } else {
       handleSetZoom(2.5);
@@ -199,7 +225,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={`Xem chi tiết ${item.name}`}
-      className="fixed inset-0 z-50 bg-black/94 backdrop-blur-xs flex flex-col select-none"
+      className="fixed inset-0 z-50 bg-black/95 flex flex-col select-none"
       onClick={onClose}
     >
       {/* Top Header Bar */}
@@ -243,8 +269,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 shrink-0">
             <button
               type="button"
-              onClick={() => handleSetZoom(zoom - ZOOM_STEP)}
-              disabled={zoom <= MIN_ZOOM}
+              onClick={() => handleSetZoom(effectiveZoom - ZOOM_STEP)}
+              disabled={effectiveZoom <= MIN_ZOOM}
               aria-label="Thu nhỏ ảnh"
               className="p-1.5 rounded hover:bg-zinc-800 text-zinc-300 disabled:opacity-35 cursor-pointer"
             >
@@ -256,20 +282,20 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               min={MIN_ZOOM}
               max={MAX_ZOOM}
               step={0.05}
-              value={zoom}
+              value={effectiveZoom}
               onChange={(e) => handleSetZoom(Number(e.target.value))}
               aria-label="Mức phóng to"
               className="w-24 accent-indigo-500 cursor-pointer"
             />
 
             <span className="w-12 text-center text-xs font-mono tabular-nums text-zinc-200 font-semibold">
-              {Math.round(zoom * 100)}%
+              {Math.round(effectiveZoom * 100)}%
             </span>
 
             <button
               type="button"
-              onClick={() => handleSetZoom(zoom + ZOOM_STEP)}
-              disabled={zoom >= MAX_ZOOM}
+              onClick={() => handleSetZoom(effectiveZoom + ZOOM_STEP)}
+              disabled={effectiveZoom >= MAX_ZOOM}
               aria-label="Phóng to ảnh"
               className="p-1.5 rounded hover:bg-zinc-800 text-zinc-300 disabled:opacity-35 cursor-pointer"
             >
@@ -286,7 +312,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   preset === 1 ? handleResetZoom() : handleSetZoom(preset)
                 }
                 className={`px-2 py-1 rounded text-[11px] font-mono tabular-nums transition-colors cursor-pointer ${
-                  Math.abs(zoom - preset) < 0.1
+                  Math.abs(effectiveZoom - preset) < 0.1
                     ? 'bg-indigo-600 text-white font-semibold'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
                 }`}
@@ -295,7 +321,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               </button>
             ))}
 
-            {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+            {(effectiveZoom !== 1 ||
+              effectivePan.x !== 0 ||
+              effectivePan.y !== 0) && (
               <button
                 type="button"
                 onClick={handleResetZoom}
@@ -422,11 +450,14 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             <div
               className="flex items-center justify-center"
               style={{
-                transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                transform: `translate3d(${effectivePan.x}px, ${effectivePan.y}px, 0) scale(${effectiveZoom})`,
                 transformOrigin: 'center center',
-                transition: isDragging ? 'none' : 'transform 120ms ease-out',
+                transition:
+                  isDragging || zoomItemId !== item.id
+                    ? 'none'
+                    : 'transform 120ms ease-out',
                 cursor:
-                  zoom > 1
+                  effectiveZoom > 1
                     ? isDragging
                       ? 'grabbing'
                       : 'grab'
@@ -434,14 +465,15 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               }}
             >
               <LiveEditedPhotoPreview
+                key={item.id}
                 item={item}
                 useHighRes={true}
-                preferOriginal={!isVideo && zoom > 1.05}
+                preferOriginal={!isVideo && effectiveZoom > 1.05}
                 showOriginal={compareOriginal}
                 activeLogoId={selectedLogoId}
                 onSelectLogoLayer={setSelectedLogoId}
                 onInteractiveMoveLogo={
-                  zoom === 1
+                  effectiveZoom === 1
                     ? (logoId, xPct, yPct) => {
                         if (!canFreeDragLogo) {
                           onRequestUpgrade(
@@ -480,7 +512,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <span>Cuộn chuột: Zoom tới 500%</span>
-            {zoom === 1 && activeLogoCount > 0 && (
+            {effectiveZoom === 1 && activeLogoCount > 0 && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="text-emerald-300 flex items-center gap-1">
@@ -491,7 +523,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 </span>
               </>
             )}
-            {zoom > 1 && (
+            {effectiveZoom > 1 && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="text-indigo-300 flex items-center gap-1">

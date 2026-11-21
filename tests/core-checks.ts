@@ -19,6 +19,7 @@ import { generateGoogleNoncePair } from '../src/lib/supabaseClient.ts';
 import {
   buildImageFallbackSources,
   buildStableDriveThumbnailUrls,
+  collectAdjacentPreloadUrls,
   computeFrameGeometry,
   computeSmartLogoPlacement,
   computeWarmthTint,
@@ -475,6 +476,54 @@ async function runCoreChecks() {
     width: 6000,
     height: 4000,
   });
+
+  // Adjacent preloading priority, wrap-around & video skipping
+  const preloadSeq = [
+    {
+      id: 'p0',
+      mediaType: 'image' as const,
+      gridThumbUrl: 'g0',
+      previewUrl: 'v0',
+    },
+    {
+      id: 'p1',
+      mediaType: 'video' as const,
+      gridThumbUrl: 'vg1',
+      previewUrl: 'vv1',
+    },
+    {
+      id: 'p2',
+      mediaType: 'image' as const,
+      gridThumbUrl: 'g2',
+      previewUrl: 'v2',
+    },
+    {
+      id: 'p3',
+      mediaType: 'image' as const,
+      gridThumbUrl: 'g3',
+      previewUrl: 'v3',
+    },
+    {
+      id: 'p4',
+      mediaType: 'image' as const,
+      gridThumbUrl: 'g4',
+      previewUrl: 'v4',
+    },
+  ];
+  assert.deepEqual(collectAdjacentPreloadUrls(preloadSeq, 0), [
+    'v4',
+    'v2',
+    'v3',
+    'g4',
+    'g2',
+    'g3',
+  ]);
+  assert.deepEqual(collectAdjacentPreloadUrls([preloadSeq[0]], 0), []);
+  assert.deepEqual(collectAdjacentPreloadUrls(preloadSeq, -1), []);
+  assert.deepEqual(collectAdjacentPreloadUrls([preloadSeq[0], preloadSeq[2]], 0), [
+    'v2',
+    'g2',
+  ]);
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }

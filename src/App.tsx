@@ -38,10 +38,14 @@ import {
   saveWorkspaceSession,
 } from './services/sessionStore.ts';
 import { toUserFriendlyError } from './utils/userMessages.ts';
+import { collectAdjacentPreloadUrls } from './utils/mediaMath.ts';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts';
 import { TopBar } from './components/TopBar.tsx';
 import { FolderSidebar } from './components/FolderSidebar.tsx';
-import { VirtualMediaGrid } from './components/VirtualMediaGrid.tsx';
+import {
+  VirtualMediaGrid,
+  preloadPreviewImages,
+} from './components/VirtualMediaGrid.tsx';
 import {
   EditorInspector,
   type LogoApplyScope,
@@ -260,28 +264,59 @@ function StudioWorkspace() {
     sortBy,
   ]);
 
+  const itemsById = useMemo(
+    () => new Map(items.map((item) => [item.id, item])),
+    [items]
+  );
+
+  const filteredIndexById = useMemo(
+    () => new Map(filteredItems.map((item, idx) => [item.id, idx])),
+    [filteredItems]
+  );
+
   useEffect(() => {
     if (filteredItems.length === 0) return;
-    const stillVisible = filteredItems.some((i) => i.id === selectedItemId);
-    if (!stillVisible) {
+    if (!selectedItemId || !filteredIndexById.has(selectedItemId)) {
       setSelectedItemId(filteredItems[0].id);
     }
-  }, [filteredItems, selectedItemId]);
+  }, [filteredItems, filteredIndexById, selectedItemId]);
 
   const selectedItem = useMemo(
-    () => items.find((i) => i.id === selectedItemId) || null,
-    [items, selectedItemId]
+    () => (selectedItemId ? itemsById.get(selectedItemId) || null : null),
+    [itemsById, selectedItemId]
   );
 
   const lightboxItem = useMemo(
-    () => items.find((i) => i.id === lightboxItemId) || null,
-    [items, lightboxItemId]
+    () => (lightboxItemId ? itemsById.get(lightboxItemId) || null : null),
+    [itemsById, lightboxItemId]
   );
 
   const cropModalItem = useMemo(
-    () => items.find((i) => i.id === cropModalItemId) || null,
-    [items, cropModalItemId]
+    () => (cropModalItemId ? itemsById.get(cropModalItemId) || null : null),
+    [itemsById, cropModalItemId]
   );
+
+  useEffect(() => {
+    if (
+      lightboxItemId ||
+      !selectedItem ||
+      selectedItem.mediaType !== 'image' ||
+      selectedItem.isLocal ||
+      !selectedItem.previewUrl
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      preloadPreviewImages([selectedItem.previewUrl]);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [
+    lightboxItemId,
+    selectedItem?.id,
+    selectedItem?.mediaType,
+    selectedItem?.isLocal,
+    selectedItem?.previewUrl,
+  ]);
 
   const selectedFolderName = useMemo(() => {
     if (selectedFolderId === 'ALL') return 'Tất cả thư mục';
@@ -500,13 +535,13 @@ function StudioWorkspace() {
     (targetItem: DriveMediaItem, e?: React.MouseEvent) => {
       if (e) e.stopPropagation();
 
-      const currentIdxInFiltered = filteredItems.findIndex(
-        (i) => i.id === targetItem.id
-      );
+      const currentIdxInFiltered = filteredIndexById.get(targetItem.id) ?? -1;
       const nextCandidate =
-        filteredItems[currentIdxInFiltered + 1] ||
-        filteredItems[currentIdxInFiltered - 1] ||
-        null;
+        currentIdxInFiltered >= 0
+          ? filteredItems[currentIdxInFiltered + 1] ||
+            filteredItems[currentIdxInFiltered - 1] ||
+            null
+          : null;
 
       const newStatus: CullingStatus =
         targetItem.status === 'kept' ? 'rejected' : 'kept';
@@ -536,7 +571,7 @@ function StudioWorkspace() {
         setLightboxItemId(null);
       }
     },
-    [filteredItems, selectedItemId, lightboxItemId]
+    [filteredItems, filteredIndexById, selectedItemId, lightboxItemId]
   );
 
   const handleUndoLastReject = useCallback(() => {
@@ -560,7 +595,7 @@ function StudioWorkspace() {
     (direction: -1 | 1) => {
       if (filteredItems.length === 0) return;
       const activeId = lightboxItemId || selectedItemId;
-      const idx = filteredItems.findIndex((i) => i.id === activeId);
+      const idx = activeId ? (filteredIndexById.get(activeId) ?? -1) : -1;
       const nextIdx =
         idx === -1
           ? 0
@@ -573,7 +608,7 @@ function StudioWorkspace() {
         setLightboxItemId(target.id);
       }
     },
-    [filteredItems, lightboxItemId, selectedItemId]
+    [filteredItems, filteredIndexById, lightboxItemId, selectedItemId]
   );
 
   const handleUpdateEdit = useCallback(
@@ -821,14 +856,14 @@ function StudioWorkspace() {
     onNextItem: () => handleNavigate(1),
     onRejectCurrent: () => {
       const activeId = lightboxItemId || selectedItemId;
-      const target = items.find((i) => i.id === activeId);
+      const target = activeId ? itemsById.get(activeId) : undefined;
       if (target) {
         handleToggleRejectStatus(target);
       }
     },
     onKeepCurrent: () => {
       const activeId = lightboxItemId || selectedItemId;
-      const target = items.find((i) => i.id === activeId);
+      const target = activeId ? itemsById.get(activeId) : undefined;
       if (target && target.status !== 'kept') {
         handleToggleRejectStatus(target);
       } else {
@@ -837,7 +872,7 @@ function StudioWorkspace() {
     },
     onRateCurrent: (rating) => {
       const activeId = lightboxItemId || selectedItemId;
-      const target = items.find((i) => i.id === activeId);
+      const target = activeId ? itemsById.get(activeId) : undefined;
       if (target) {
         handleRateItem(target.id, target.rating === rating ? 0 : rating);
       }
@@ -845,7 +880,7 @@ function StudioWorkspace() {
     onUndoLastReject: handleUndoLastReject,
     onOpenCropModal: () => {
       const activeId = lightboxItemId || selectedItemId;
-      const target = items.find((i) => i.id === activeId);
+      const target = activeId ? itemsById.get(activeId) : undefined;
       if (target && target.mediaType === 'image') {
         setCropModalItemId(target.id);
       }
@@ -878,13 +913,13 @@ function StudioWorkspace() {
     ),
   });
 
+  const activeCountFolderId =
+    selectedFolderId !== 'ALL'
+      ? selectedFolderId
+      : selectedItem?.folderId || '';
+
   const { totalKeptCount, keptPhotoCount, currentFolderPhotoCount } =
     useMemo(() => {
-      const targetFolderId =
-        selectedFolderId !== 'ALL'
-          ? selectedFolderId
-          : selectedItem?.folderId || '';
-
       let totalKept = 0;
       let keptPhotos = 0;
       let folderPhotos = 0;
@@ -894,7 +929,7 @@ function StudioWorkspace() {
           totalKept++;
           if (i.mediaType === 'image') {
             keptPhotos++;
-            if (!targetFolderId || i.folderId === targetFolderId) {
+            if (!activeCountFolderId || i.folderId === activeCountFolderId) {
               folderPhotos++;
             }
           }
@@ -906,13 +941,20 @@ function StudioWorkspace() {
         keptPhotoCount: keptPhotos,
         currentFolderPhotoCount: folderPhotos,
       };
-    }, [items, selectedFolderId, selectedItem]);
+    }, [items, activeCountFolderId]);
 
   const currentLightboxIndex = useMemo(() => {
     if (!lightboxItemId) return 0;
-    const idx = filteredItems.findIndex((i) => i.id === lightboxItemId);
-    return idx >= 0 ? idx : 0;
-  }, [filteredItems, lightboxItemId]);
+    return filteredIndexById.get(lightboxItemId) ?? 0;
+  }, [filteredIndexById, lightboxItemId]);
+
+  const lightboxPreloadUrls = useMemo(
+    () =>
+      lightboxItemId
+        ? collectAdjacentPreloadUrls(filteredItems, currentLightboxIndex)
+        : [],
+    [lightboxItemId, filteredItems, currentLightboxIndex]
+  );
 
   return (
     <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
@@ -1057,6 +1099,7 @@ function StudioWorkspace() {
       {/* Full-Screen Lightbox with Native Video Seek & Multi-Logo Dragging */}
       <LightboxModal
         item={lightboxItem}
+        preloadUrls={lightboxPreloadUrls}
         canFreeDragLogo={entitlements.canFreeDragLogo}
         onRequestUpgrade={handleOpenUpgradeModal}
         compareOriginal={compareOriginal}

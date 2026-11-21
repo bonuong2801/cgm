@@ -77,6 +77,58 @@ export function formatVideoDuration(durationMillis?: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+// ponytail: fixed 16-image decoded bitmap LRU; tune if preview memory budget changes
+const MAX_PRELOADED_IMAGES = 16;
+const preloadedImageCache = new Map<string, HTMLImageElement>();
+const preloadedReadyUrls = new Set<string>();
+
+export function isPreviewImagePreloaded(url: string): boolean {
+  return Boolean(url) && preloadedReadyUrls.has(url);
+}
+
+export function markPreviewImageReady(url: string): void {
+  if (!url) return;
+  preloadedReadyUrls.add(url);
+}
+
+export function preloadPreviewImages(urls: string[]): void {
+  if (typeof Image === 'undefined') return;
+
+  for (const url of urls) {
+    if (!url || url.startsWith('data:')) continue;
+
+    const existing = preloadedImageCache.get(url);
+    if (existing) {
+      preloadedImageCache.delete(url);
+      preloadedImageCache.set(url, existing);
+      continue;
+    }
+
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    img.decoding = 'async';
+    img.onload = () => {
+      preloadedReadyUrls.add(url);
+      if (typeof img.decode === 'function') {
+        img.decode().catch(() => {});
+      }
+    };
+    img.onerror = () => {
+      preloadedImageCache.delete(url);
+      preloadedReadyUrls.delete(url);
+    };
+    img.src = url;
+    preloadedImageCache.set(url, img);
+
+    while (preloadedImageCache.size > MAX_PRELOADED_IMAGES) {
+      const oldestKey = preloadedImageCache.keys().next().value;
+      if (!oldestKey) break;
+      preloadedImageCache.delete(oldestKey);
+      preloadedReadyUrls.delete(oldestKey);
+    }
+  }
+}
+
 function appendRetryParam(url: string, attempt: number): string {
   if (
     !url ||
@@ -154,6 +206,7 @@ export const LiveEditedPhotoPreview: React.FC<{
   const [sourceIndex, setSourceIndex] = useState<number>(0);
   const [retryAttempt, setRetryAttempt] = useState<number>(0);
   const [loadFailed, setLoadFailed] = useState<boolean>(false);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [loadedOriginalUrl, setLoadedOriginalUrl] = useState<string | null>(
     null
   );
@@ -167,6 +220,7 @@ export const LiveEditedPhotoPreview: React.FC<{
     setSourceIndex(0);
     setRetryAttempt(0);
     setLoadFailed(false);
+    setLoadedSrc(null);
     setLoadedOriginalUrl(null);
   }, [item.id, useHighRes, item.gridThumbUrl, item.previewUrl]);
 
@@ -191,6 +245,7 @@ export const LiveEditedPhotoPreview: React.FC<{
     }
 
     if (candidateSources[sourceIndex] === streamUrl) {
+      markPreviewImageReady(streamUrl);
       setLoadedOriginalUrl(streamUrl);
       return;
     }
@@ -200,6 +255,7 @@ export const LiveEditedPhotoPreview: React.FC<{
     preloader.referrerPolicy = 'no-referrer';
     preloader.onload = () => {
       if (cancelled) return;
+      markPreviewImageReady(streamUrl);
       setLoadedOriginalUrl(streamUrl);
       if (
         onDimensionsDetected &&
@@ -257,6 +313,8 @@ export const LiveEditedPhotoPreview: React.FC<{
   const activeLogos = showOriginal ? [] : getActiveLogos(edit);
 
   const handleImageLoaded = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    markPreviewImageReady(src);
+    setLoadedSrc(src);
     const natW = e.currentTarget.naturalWidth;
     const natH = e.currentTarget.naturalHeight;
     if (onDimensionsDetected && natW > 0 && natH > 0) {
@@ -361,6 +419,35 @@ export const LiveEditedPhotoPreview: React.FC<{
     }
   };
 
+  const isCurrentSrcReady =
+    Boolean(src) && (loadedSrc === src || isPreviewImagePreloaded(src));
+  const showInstantBaseLayer =
+    useHighRes &&
+    !item.isLocal &&
+    !isCurrentSrcReady &&
+    Boolean(item.gridThumbUrl) &&
+    item.gridThumbUrl !== src;
+
+  const imageLayerStyle: React.CSSProperties = isPerpendicular
+    ? {
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        width: `${(geom.rotH / Math.max(1, geom.rotW)) * 100}%`,
+        height: `${(geom.rotW / Math.max(1, geom.rotH)) * 100}%`,
+        transform: `translate(-50%, -50%) rotate(${edit.rotation}deg)`,
+        filter: cssFilter,
+      }
+    : {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        transform:
+          edit.rotation !== 0 ? `rotate(${edit.rotation}deg)` : undefined,
+        filter: cssFilter,
+      };
+
   return (
     <div
       ref={containerRef}
@@ -401,36 +488,35 @@ export const LiveEditedPhotoPreview: React.FC<{
             top: `${-(cp.y / Math.max(1, cp.height)) * 100}%`,
           }}
         >
+          {showInstantBaseLayer && (
+            <img
+              src={item.gridThumbUrl}
+              alt=""
+              aria-hidden="true"
+              referrerPolicy="no-referrer"
+              loading="eager"
+              decoding="sync"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+              className="max-w-none select-none pointer-events-none block"
+              style={imageLayerStyle}
+            />
+          )}
           <img
             src={src}
             alt={item.name}
             referrerPolicy="no-referrer"
             loading={useHighRes ? 'eager' : 'lazy'}
+            fetchPriority={useHighRes ? 'high' : undefined}
             decoding="async"
             onLoad={handleImageLoaded}
             onError={handleImageError}
             className="max-w-none select-none pointer-events-none block"
-            style={
-              isPerpendicular
-                ? {
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    width: `${(geom.rotH / Math.max(1, geom.rotW)) * 100}%`,
-                    height: `${(geom.rotW / Math.max(1, geom.rotH)) * 100}%`,
-                    transform: `translate(-50%, -50%) rotate(${edit.rotation}deg)`,
-                    filter: cssFilter,
-                  }
-                : {
-                    width: '100%',
-                    height: '100%',
-                    transform:
-                      edit.rotation !== 0
-                        ? `rotate(${edit.rotation}deg)`
-                        : undefined,
-                    filter: cssFilter,
-                  }
-            }
+            style={{
+              ...imageLayerStyle,
+              opacity: showInstantBaseLayer ? 0 : 1,
+            }}
           />
         </div>
       )}

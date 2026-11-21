@@ -407,3 +407,41 @@ export function resolveDetectedDimensions(
 
   return { width: natW, height: natH };
 }
+
+/**
+ * Collects prioritized preview and thumbnail URLs around the current index
+ * so Lightbox navigation next/prev settles immediately from memory/cache.
+ */
+export function collectAdjacentPreloadUrls(
+  items: Array<{
+    id: string;
+    mediaType: 'image' | 'video';
+    gridThumbUrl: string;
+    previewUrl: string;
+  }>,
+  currentIndex: number
+): string[] {
+  if (items.length <= 1 || currentIndex < 0 || currentIndex >= items.length) {
+    return [];
+  }
+
+  const total = items.length;
+  const itemAt = (offset: number) => {
+    const idx = (((currentIndex + offset) % total) + total) % total;
+    if (idx === currentIndex) return null;
+    const candidate = items[idx];
+    return candidate && candidate.mediaType === 'image' ? candidate : null;
+  };
+
+  const urls: string[] = [];
+  for (const offset of [1, -1, 2, 3]) {
+    const neighbor = itemAt(offset);
+    if (neighbor?.previewUrl) urls.push(neighbor.previewUrl);
+  }
+  for (const offset of [1, -1, 2, 3, 4]) {
+    const neighbor = itemAt(offset);
+    if (neighbor?.gridThumbUrl) urls.push(neighbor.gridThumbUrl);
+  }
+
+  return dedupeTruthyUrls(urls);
+}
