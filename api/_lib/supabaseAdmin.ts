@@ -191,15 +191,15 @@ export async function verifyRequestUser(
 export function getServerBillingPlans(): Record<PlanId, BillingPlanOption> {
   const monthly = Math.max(
     2000,
-    Number(process.env.PLAN_MONTHLY_VND) || 99_000
+    Number(process.env.PLAN_MONTHLY_VND) || 29_000
   );
   const yearly = Math.max(
     2000,
-    Number(process.env.PLAN_YEARLY_VND) || 599_000
+    Number(process.env.PLAN_YEARLY_VND) || 199_000
   );
   const lifetime = Math.max(
     2000,
-    Number(process.env.PLAN_LIFETIME_VND) || 1_290_000
+    Number(process.env.PLAN_LIFETIME_VND) || 399_000
   );
 
   return {

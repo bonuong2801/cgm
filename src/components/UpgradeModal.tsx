@@ -39,21 +39,21 @@ const DEFAULT_FALLBACK_PLANS: BillingPlanOption[] = [
     id: 'monthly',
     name: 'Gói 1 Tháng',
     durationLabel: '30 ngày Full chức năng',
-    amountVnd: 99_000,
+    amountVnd: 29_000,
   },
   {
     id: 'yearly',
     name: 'Gói 1 Năm',
     badge: 'Phổ biến nhất',
     durationLabel: '365 ngày Full chức năng',
-    amountVnd: 599_000,
+    amountVnd: 199_000,
   },
   {
     id: 'lifetime',
     name: 'Mở khóa Vĩnh viễn',
     badge: 'Tiết kiệm nhất',
     durationLabel: 'Trọn đời không giới hạn',
-    amountVnd: 1_290_000,
+    amountVnd: 399_000,
   },
 ];
 

@@ -47,6 +47,7 @@ import {
   verifyAndParseBankWebhook,
   verifyPayOsSignature,
 } from '../api/billing/vietqr-webhook.ts';
+import { getServerBillingPlans } from '../api/_lib/supabaseAdmin.ts';
 import { GET as handleDriveCrawl } from '../api/drive/crawl.ts';
 import { GET as handleDriveStream } from '../api/drive/stream.ts';
 
@@ -654,6 +655,24 @@ async function runCoreChecks() {
   assert.equal(readUserGuideHidden('user_other', mockStorage), false);
   writeUserGuideHidden('user_abc', false, mockStorage);
   assert.equal(readUserGuideHidden('user_abc', mockStorage), false);
+
+  // 13. Default Subscription Pricing
+  const savedMonthly = process.env.PLAN_MONTHLY_VND;
+  const savedYearly = process.env.PLAN_YEARLY_VND;
+  const savedLifetime = process.env.PLAN_LIFETIME_VND;
+  delete process.env.PLAN_MONTHLY_VND;
+  delete process.env.PLAN_YEARLY_VND;
+  delete process.env.PLAN_LIFETIME_VND;
+  try {
+    const defaultPlans = getServerBillingPlans();
+    assert.equal(defaultPlans.monthly.amountVnd, 29_000);
+    assert.equal(defaultPlans.yearly.amountVnd, 199_000);
+    assert.equal(defaultPlans.lifetime.amountVnd, 399_000);
+  } finally {
+    if (savedMonthly !== undefined) process.env.PLAN_MONTHLY_VND = savedMonthly;
+    if (savedYearly !== undefined) process.env.PLAN_YEARLY_VND = savedYearly;
+    if (savedLifetime !== undefined) process.env.PLAN_LIFETIME_VND = savedLifetime;
+  }
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }
