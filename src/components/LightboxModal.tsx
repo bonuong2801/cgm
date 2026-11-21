@@ -360,12 +360,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={`Xem chi tiết ${item.name}`}
-      className="fixed inset-0 z-50 bg-black/95 flex flex-col select-none"
+      className="fixed inset-0 z-50 bg-[#08080A]/98 flex flex-col select-none"
       onClick={onClose}
     >
       {/* Top Header Bar */}
       <div
-        className="h-14 px-5 bg-zinc-900/95 border-b border-zinc-800 flex items-center justify-between gap-4 shrink-0 z-30"
+        className="h-14 px-5 bg-[#121215] border-b border-white/10 flex items-center justify-between gap-4 shrink-0 z-30"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2.5 min-w-0">
@@ -380,7 +380,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           </span>
           {isStagePending && (
             <Loader2
-              className="w-3.5 h-3.5 text-zinc-400 animate-spin shrink-0"
+              className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0"
               aria-label="Đang tải ảnh"
             />
           )}
@@ -407,13 +407,13 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
         {/* Center Zoom Controls for Photos */}
         {!isVideo && (
-          <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 shrink-0">
+          <div className="flex items-center gap-1.5 bg-[#09090B] border border-white/10 rounded-lg px-2 py-1 shrink-0">
             <button
               type="button"
               onClick={() => handleSetZoom(effectiveZoom - ZOOM_STEP)}
               disabled={effectiveZoom <= MIN_ZOOM}
               aria-label="Thu nhỏ ảnh"
-              className="p-1.5 rounded hover:bg-zinc-800 text-zinc-300 disabled:opacity-35 cursor-pointer"
+              className="p-1.5 rounded hover:bg-white/5 text-zinc-300 disabled:opacity-35 cursor-pointer"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
@@ -426,7 +426,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               value={effectiveZoom}
               onChange={(e) => handleSetZoom(Number(e.target.value))}
               aria-label="Mức phóng to"
-              className="w-24 accent-indigo-500 cursor-pointer"
+              className="w-24 accent-amber-400 cursor-pointer"
             />
 
             <span className="w-12 text-center text-xs font-mono tabular-nums text-zinc-200 font-semibold">
@@ -438,12 +438,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               onClick={() => handleSetZoom(effectiveZoom + ZOOM_STEP)}
               disabled={effectiveZoom >= MAX_ZOOM}
               aria-label="Phóng to ảnh"
-              className="p-1.5 rounded hover:bg-zinc-800 text-zinc-300 disabled:opacity-35 cursor-pointer"
+              className="p-1.5 rounded hover:bg-white/5 text-zinc-300 disabled:opacity-35 cursor-pointer"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
 
-            <div className="h-4 w-px bg-zinc-800 mx-0.5" />
+            <div className="h-4 w-px bg-white/10 mx-0.5" />
 
             {[1, 2, 3, 4].map((preset) => (
               <button
@@ -454,8 +454,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 }
                 className={`px-2 py-1 rounded text-[11px] font-mono tabular-nums transition-colors cursor-pointer ${
                   Math.abs(effectiveZoom - preset) < 0.1
-                    ? 'bg-indigo-600 text-white font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                    ? 'bg-amber-500 text-zinc-950 font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
                 }`}
               >
                 {preset}x
@@ -469,7 +469,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 type="button"
                 onClick={handleResetZoom}
                 aria-label="Đặt lại khung hình chuẩn"
-                className="p-1.5 rounded hover:bg-zinc-800 text-amber-400 cursor-pointer"
+                className="p-1.5 rounded hover:bg-white/5 text-amber-400 cursor-pointer"
               >
                 <Maximize className="w-3.5 h-3.5" />
               </button>

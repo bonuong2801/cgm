@@ -469,3 +469,31 @@ export function getInstantPaintState(
     highResReady,
   };
 }
+
+/**
+ * Fits a target aspect ratio (`aspectW / aspectH`) inside a container box
+ * (`boxW x boxH`) without overflow or distortion.
+ */
+export function fitAspectRatioInBox(
+  boxW: number,
+  boxH: number,
+  aspectW: number,
+  aspectH: number
+): { width: number; height: number } {
+  const safeBoxW = Math.max(1, boxW);
+  const safeBoxH = Math.max(1, boxH);
+  const safeAspectW = Math.max(1, aspectW);
+  const safeAspectH = Math.max(1, aspectH);
+  const ratio = safeAspectW / safeAspectH;
+
+  if (safeBoxW / safeBoxH > ratio) {
+    return {
+      width: Math.max(1, Math.round(safeBoxH * ratio)),
+      height: Math.max(1, Math.round(safeBoxH)),
+    };
+  }
+  return {
+    width: Math.max(1, Math.round(safeBoxW)),
+    height: Math.max(1, Math.round(safeBoxW / ratio)),
+  };
+}

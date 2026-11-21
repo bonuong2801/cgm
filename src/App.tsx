@@ -297,26 +297,25 @@ function StudioWorkspace() {
   );
 
   useEffect(() => {
-    if (
-      lightboxItemId ||
-      !selectedItem ||
-      selectedItem.mediaType !== 'image' ||
-      selectedItem.isLocal ||
-      !selectedItem.previewUrl
-    ) {
+    if (lightboxItemId || !selectedItem) {
       return;
     }
+    const selectedIdx = filteredIndexById.get(selectedItem.id) ?? -1;
+    const urlsToPreload = [
+      selectedItem.mediaType === 'image' && !selectedItem.isLocal
+        ? selectedItem.previewUrl
+        : '',
+      ...(selectedIdx >= 0
+        ? collectAdjacentPreloadUrls(filteredItems, selectedIdx)
+        : []),
+    ].filter(Boolean);
+    if (urlsToPreload.length === 0) return;
+
     const timer = window.setTimeout(() => {
-      preloadPreviewImages([selectedItem.previewUrl]);
-    }, 120);
+      preloadPreviewImages(urlsToPreload);
+    }, 140);
     return () => window.clearTimeout(timer);
-  }, [
-    lightboxItemId,
-    selectedItem?.id,
-    selectedItem?.mediaType,
-    selectedItem?.isLocal,
-    selectedItem?.previewUrl,
-  ]);
+  }, [lightboxItemId, selectedItem?.id, filteredItems, filteredIndexById]);
 
   const selectedFolderName = useMemo(() => {
     if (selectedFolderId === 'ALL') return 'Tất cả thư mục';
@@ -957,7 +956,7 @@ function StudioWorkspace() {
   );
 
   return (
-    <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-[#08080A] text-zinc-100 flex flex-col overflow-hidden">
       {/* Top Studio Bar */}
       <TopBar
         profile={profile}
@@ -1052,7 +1051,11 @@ function StudioWorkspace() {
           sortBy={sortBy}
           onSortByChange={setSortBy}
           compareOriginal={compareOriginal}
+          onCompareOriginalChange={setCompareOriginal}
           onSelectItem={(item) => setSelectedItemId(item.id)}
+          onPrevItem={() => handleNavigate(-1)}
+          onNextItem={() => handleNavigate(1)}
+          onRateItem={handleRateItem}
           onToggleCheckItem={handleToggleCheckItem}
           onSelectAllVisiblePhotos={handleSelectAllVisiblePhotos}
           onClearCheckedItems={handleClearCheckedItems}
@@ -1060,8 +1063,12 @@ function StudioWorkspace() {
             setSelectedItemId(item.id);
             setLightboxItemId(item.id);
           }}
+          onOpenCropModal={(item) => setCropModalItemId(item.id)}
           onToggleRejectStatus={handleToggleRejectStatus}
           onUpdateDetectedDimensions={handleUpdateDetectedDimensions}
+          canFreeDragLogo={entitlements.canFreeDragLogo}
+          onRequestUpgrade={handleOpenUpgradeModal}
+          onMoveLogoLayer={handleMoveLightboxLogoLayer}
           gridColumns={gridColumns}
           onFocusDriveInput={() => driveInputRef.current?.focus()}
           onImportLocalFiles={handleImportLocalFiles}

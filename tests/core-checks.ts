@@ -23,6 +23,7 @@ import {
   computeFrameGeometry,
   computeSmartLogoPlacement,
   computeWarmthTint,
+  fitAspectRatioInBox,
   getInstantPaintState,
   normalizeDriveMediaUrls,
   resolveDetectedDimensions,
@@ -589,6 +590,24 @@ async function runCoreChecks() {
     ),
     { canSwapImmediately: false, highResReady: false }
   );
+
+  // Fit aspect ratio cleanly inside Loupe stage bounds
+  assert.deepEqual(fitAspectRatioInBox(900, 600, 6000, 4000), {
+    width: 900,
+    height: 600,
+  });
+  assert.deepEqual(fitAspectRatioInBox(900, 600, 4000, 6000), {
+    width: 400,
+    height: 600,
+  });
+  assert.deepEqual(fitAspectRatioInBox(400, 600, 6000, 4000), {
+    width: 400,
+    height: 267,
+  });
+  assert.deepEqual(fitAspectRatioInBox(0, -10, 0, 0), {
+    width: 1,
+    height: 1,
+  });
 
   console.log('ALL CORE & SECURITY CHECKS PASSED SUCCESSFULLY');
 }

@@ -74,7 +74,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <header className="h-14 bg-zinc-900 border-b border-zinc-800 px-3 flex items-center justify-between gap-2.5 shrink-0 select-none z-20">
+    <header className="h-13 bg-[#121215] border-b border-white/10 px-3 flex items-center justify-between gap-2.5 shrink-0 select-none z-20">
       {/* Zone 1: Left Sidebar Toggle + Official Brand Logo */}
       <div className="flex items-center gap-2 shrink-0">
         <button
@@ -86,7 +86,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           title={
             isLeftSidebarOpen ? 'Thu gọn thanh thư mục' : 'Mở thanh thư mục'
           }
-          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
+          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-white/5 transition-colors cursor-pointer"
         >
           {isLeftSidebarOpen ? (
             <PanelLeftClose className="w-4 h-4" />
@@ -98,10 +98,10 @@ export const TopBar: React.FC<TopBarProps> = ({
         <img
           src="/logo-cgm.png"
           alt="CGM Studio Logo"
-          className="w-8 h-8 rounded-lg object-cover border border-zinc-800 shadow-sm shrink-0"
+          className="w-8 h-8 rounded-lg object-cover border border-amber-400/35 shadow-sm shrink-0"
         />
-        <span className="text-sm font-bold tracking-tight text-zinc-100 whitespace-nowrap hidden xl:inline">
-          CGM Studio
+        <span className="text-sm font-bold tracking-wide text-zinc-100 whitespace-nowrap hidden xl:inline">
+          CGM STUDIO
         </span>
       </div>
 
@@ -112,10 +112,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           className="flex-1 flex items-center gap-1.5 min-w-0"
         >
           <div
-            className={`flex-1 flex items-center bg-zinc-950 border rounded-lg px-2.5 py-1.5 transition-colors min-w-0 ${
+            className={`flex-1 flex items-center bg-[#09090B] border rounded-lg px-2.5 py-1.5 transition-colors min-w-0 ${
               inputFocused
-                ? 'border-indigo-500 ring-1 ring-indigo-500/30'
-                : 'border-zinc-800 hover:border-zinc-700'
+                ? 'border-amber-500/70 ring-1 ring-amber-500/25'
+                : 'border-white/10 hover:border-white/20'
             }`}
           >
             <FolderSearch
@@ -148,11 +148,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="submit"
             disabled={isLoading || !driveUrlInput.trim()}
-            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:pointer-events-none text-zinc-100 border border-white/10 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
           >
             {isLoading ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
                 <span>Tải...</span>
               </>
             ) : (
@@ -182,7 +182,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={() => localFilesInputRef.current?.click()}
           disabled={isLoading}
-          className="px-2.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+          className="px-2.5 py-1.5 text-xs font-semibold text-white bg-emerald-600/90 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
           title="Chọn hàng loạt ảnh từ máy tính"
         >
           <ImagePlus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -193,11 +193,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={() => localFolderInputRef.current?.click()}
           disabled={isLoading}
-          className="px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors hidden xl:flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+          className="px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors hidden xl:flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
           title="Tải nguyên thư mục nhiều cấp từ máy tính"
         >
           <FolderUp
-            className="w-3.5 h-3.5 text-indigo-400 shrink-0"
+            className="w-3.5 h-3.5 text-amber-400 shrink-0"
             aria-hidden="true"
           />
           <span>Thư mục</span>
@@ -210,7 +210,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onClearAllWorkspace}
-            className="p-1.5 text-xs font-medium text-zinc-400 hover:text-rose-300 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors cursor-pointer"
+            className="p-1.5 text-xs font-medium text-zinc-400 hover:text-rose-300 bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors cursor-pointer"
             title="Làm mới danh sách ảnh hiện tại"
             aria-label="Làm mới không gian làm việc"
           >
@@ -222,7 +222,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={onUndoReject}
-            className="p-1.5 text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors cursor-pointer"
+            className="p-1.5 text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-[#09090B] hover:bg-zinc-800 border border-white/10 rounded-lg transition-colors cursor-pointer"
             title="Hoàn tác loại bỏ (Phím Z)"
             aria-label="Hoàn tác loại bỏ"
           >
@@ -234,12 +234,12 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={onOpenExportModal}
           disabled={keptCount === 0}
-          className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
+          className="px-3 py-1.5 text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" aria-hidden="true" />
           <span>Xuất</span>
           {totalCount > 0 && (
-            <span className="font-mono tabular-nums text-indigo-100 font-normal">
+            <span className="font-mono tabular-nums text-zinc-900/80 font-semibold">
               ({keptCount})
             </span>
           )}
@@ -280,7 +280,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             onClick={onSignOut}
             aria-label="Đăng xuất tài khoản"
             title={`Đăng xuất (${profile.email})`}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-zinc-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-white/5 transition-colors cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -299,7 +299,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               ? 'Thu gọn bảng chỉnh sửa & ghép Logo'
               : 'Mở bảng chỉnh sửa & ghép Logo'
           }
-          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
+          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-white/5 transition-colors cursor-pointer"
         >
           {isRightInspectorOpen ? (
             <PanelRightClose className="w-4 h-4" />

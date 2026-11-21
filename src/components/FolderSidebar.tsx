@@ -89,9 +89,9 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
   }, [items, selectedFolderId, mediaTypeFilter]);
 
   return (
-    <aside className="w-68 bg-zinc-900 border-r border-zinc-800 flex flex-col h-full shrink-0 select-none">
+    <aside className="w-66 bg-[#101013] border-r border-white/10 flex flex-col h-full shrink-0 select-none">
       {/* Section 1: Culling Status Filter */}
-      <div className="p-3.5 border-b border-zinc-800 space-y-3">
+      <div className="p-3.5 border-b border-white/10 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-400">
             Trạng thái chọn lọc
@@ -101,7 +101,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-zinc-950 rounded-lg border border-zinc-800">
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#09090B] rounded-lg border border-white/10">
           <button
             type="button"
             onClick={() => onSelectStatusFilter('kept')}
@@ -150,7 +150,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
           <span className="text-xs font-semibold text-zinc-400 block">
             Loại phương tiện
           </span>
-          <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-950 rounded-lg border border-zinc-800">
+          <div className="grid grid-cols-3 gap-1 p-1 bg-[#09090B] rounded-lg border border-white/10">
             <button
               type="button"
               onClick={() => onSelectMediaType('all')}
@@ -206,14 +206,14 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
           onClick={() => onSelectFolder('ALL')}
           className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
             selectedFolderId === 'ALL'
-              ? 'bg-indigo-500/15 text-indigo-200 border border-indigo-500/30'
-              : 'text-zinc-300 hover:bg-zinc-800/60 border border-transparent'
+              ? 'bg-amber-500/15 text-amber-200 border border-amber-500/35'
+              : 'text-zinc-300 hover:bg-white/5 border border-transparent'
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <Layers
               className={`w-4 h-4 shrink-0 ${
-                selectedFolderId === 'ALL' ? 'text-indigo-400' : 'text-zinc-400'
+                selectedFolderId === 'ALL' ? 'text-amber-400' : 'text-zinc-400'
               }`}
               aria-hidden="true"
             />
@@ -226,7 +226,13 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
               </div>
             </div>
           </div>
-          <span className="text-xs font-mono tabular-nums text-zinc-300 shrink-0">
+          <span
+            className={`text-xs font-mono tabular-nums shrink-0 ${
+              selectedFolderId === 'ALL'
+                ? 'text-amber-200 font-semibold'
+                : 'text-zinc-300'
+            }`}
+          >
             {statsSummary.totalKept}/{items.length}
           </span>
         </button>
@@ -246,14 +252,14 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
               onClick={() => onSelectFolder(folder.id)}
               className={`w-full px-3 py-2 rounded-lg text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${
                 isSelected
-                  ? 'bg-indigo-500/15 text-indigo-200 border border-indigo-500/30'
-                  : 'text-zinc-300 hover:bg-zinc-800/60 border border-transparent'
+                  ? 'bg-amber-500/15 text-amber-200 border border-amber-500/35'
+                  : 'text-zinc-300 hover:bg-white/5 border border-transparent'
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 {isSelected ? (
                   <FolderOpen
-                    className="w-4 h-4 text-indigo-400 shrink-0"
+                    className="w-4 h-4 text-amber-400 shrink-0"
                     aria-hidden="true"
                   />
                 ) : (
@@ -276,7 +282,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
               </div>
               <span
                 className={`text-xs font-mono tabular-nums shrink-0 ${
-                  isSelected ? 'text-indigo-200 font-semibold' : 'text-zinc-400'
+                  isSelected ? 'text-amber-200 font-semibold' : 'text-zinc-400'
                 }`}
               >
                 {stats.kept}/{stats.total}
@@ -287,10 +293,10 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
       </div>
 
       {/* Section 3: Grid Density & Studio Shortcuts */}
-      <div className="p-3 border-t border-zinc-800 bg-zinc-950/50 space-y-2.5">
+      <div className="p-3 border-t border-white/10 bg-[#0B0B0D]/70 space-y-2.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-zinc-400">Số cột lưới ảnh</span>
-          <div className="flex items-center gap-1 bg-zinc-900 p-0.5 rounded-md border border-zinc-800">
+          <span className="text-xs text-zinc-400">Số cột chế độ Lưới</span>
+          <div className="flex items-center gap-1 bg-[#09090B] p-0.5 rounded-md border border-white/10">
             {[2, 3, 4, 5, 6].map((cols) => (
               <button
                 key={cols}
@@ -298,7 +304,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
                 onClick={() => onChangeGridColumns(cols)}
                 className={`w-6 h-6 text-xs font-mono tabular-nums rounded transition-colors cursor-pointer ${
                   gridColumns === cols
-                    ? 'bg-indigo-600 text-white font-semibold'
+                    ? 'bg-amber-500 text-zinc-950 font-bold'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
                 title={`Hiển thị ${cols} cột`}
@@ -309,9 +315,13 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
           </div>
         </div>
 
-        <div className="text-[11px] text-zinc-400 space-y-1 pt-1 border-t border-zinc-800/80">
+        <div className="text-[11px] text-zinc-400 space-y-1 pt-1 border-t border-white/10">
           <div className="font-semibold text-zinc-300 mb-1">
             Phím tắt Studio
+          </div>
+          <div className="flex justify-between">
+            <span>Chuyển ảnh trước / sau</span>
+            <span className="font-mono text-amber-300">← / →</span>
           </div>
           <div className="flex justify-between">
             <span>Phóng to &amp; kéo đặt Logo</span>
@@ -331,7 +341,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
           </div>
           <div className="flex justify-between">
             <span>Cắt khung (C) · Hoàn tác (Z)</span>
-            <span className="font-mono text-indigo-400">C / Z</span>
+            <span className="font-mono text-zinc-300">C / Z</span>
           </div>
         </div>
       </div>
